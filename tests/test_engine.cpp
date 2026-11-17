@@ -24,11 +24,14 @@ struct Render
     std::vector<float> l, r;
 };
 
+static bool gLowLatency = false;
+
 static Render run (const std::vector<float>& in, double fs, const HarmonizerParams& p,
                    const std::function<void (Harmonizer&)>& before = {})
 {
     Harmonizer h;
     h.prepare (fs);
+    h.setLowLatency (gLowLatency);
     h.setParams (p);
     if (before) before (h);
     Render out;
@@ -68,6 +71,10 @@ int main()
 {
     const double fs = 48000.0;
 
+    for (int pass = 0; pass < 2; ++pass)
+    {
+    gLowLatency = pass == 1;
+    std::printf ("%s\n", pass ? "-- low latency --" : "-- full latency --");
     // 1. Tuned lead: a slightly sharp A3 comes out on A3.
     {
         const auto in = test::synthVowel (fs, 2.0, 220.0 * std::exp2 (30.0 / 1200.0));
@@ -122,6 +129,9 @@ int main()
         std::printf ("      tonic: %.2f Hz (%.1f c from A2)\n", hz, cents (hz, 110.0));
         check (std::abs (cents (hz, 110.0)) < 8.0, "tonic drone sits on A2");
     }
+
+    }
+    gLowLatency = false;
 
     // 6. MIDI off means silence from the harmony bus, and it releases.
     {
@@ -188,9 +198,54 @@ int main()
         check (secs < 1.0, "10 voices run at least 10x faster than real time");
     }
 
+    // 9. Measured delay: silence then a vowel; when does the tuned lead reach half level?
+    {
+        std::vector<float> in (24000, 0.0f);
+        const auto v = test::synthVowel (fs, 1.5, 220.0);
+        in.insert (in.end(), v.begin(), v.end());
+        auto onset = [&] (const std::vector<float>& x)
+        {
+            float peak = 0.0f;
+            for (float s : x) peak = std::max (peak, std::abs (s));
+            for (size_t i = 0; i < x.size(); ++i)
+                if (std::abs (x[i]) > 0.5f * peak) return (double) i;
+            return 0.0;
+        };
+        const double t0 = onset (in);
+        double d[2];
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            gLowLatency = pass == 1;
+            d[pass] = 1000.0 * (onset (mono (run (in, fs, only (1.0f, 0.0f)))) - t0) / fs;
+        }
+        gLowLatency = false;
+        std::printf ("      onset delay at A3: full %.1f ms, low latency %.1f ms\n", d[0], d[1]);
+        check (d[1] < 20.0 && d[1] < d[0] - 10.0, "low latency mode responds in under 20 ms at A3");
+    }
+
+    // 10. Low latency stays clean on a moving pitch: harmony voice follows a wide vibrato.
+    {
+        const auto in = test::synthVowel (fs, 3.0, 196.0, 60.0);
+        auto p = only (0.0f, 1.0f);
+        p.mode = kModeMidi;
+        double hz[2];
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            gLowLatency = pass == 1;
+            const auto out = mono (run (in, fs, p, [] (Harmonizer& h) { h.noteOn (62, 1.0f); }));
+            hz[pass] = test::medianPitch (out, fs, 0.5, 2.8);
+        }
+        gLowLatency = false;
+        std::printf ("      D4 from G3 with 60 c vibrato: full %.1f c, low latency %.1f c\n",
+                     cents (hz[0], midiToHz (62)), cents (hz[1], midiToHz (62)));
+        check (std::abs (cents (hz[1], midiToHz (62))) < 8.0, "low latency holds the note under vibrato");
+    }
+
     Harmonizer h;
     h.prepare (fs);
-    std::printf ("\nLatency at 48 kHz: %d samples (%.1f ms)\n", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);
+    std::printf ("\nReported latency at 48 kHz: %d samples (%.1f ms)", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);
+    h.setLowLatency (true);
+    std::printf (", low latency mode %d samples (%.1f ms)\n", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);
     std::printf ("%s\n", failures ? "SOME TESTS FAILED" : "ALL PASSED");
     return failures ? 1 : 0;
 }

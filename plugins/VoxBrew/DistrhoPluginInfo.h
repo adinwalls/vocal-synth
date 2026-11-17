@@ -9,8 +9,13 @@
 #define DISTRHO_PLUGIN_BRAND_ID  VxBr
 #define DISTRHO_PLUGIN_UNIQUE_ID VbHm
 
-// No custom editor yet: Mixbus shows its generic controls.
-#define DISTRHO_PLUGIN_HAS_UI          0
+#define DISTRHO_PLUGIN_HAS_UI          1
+#define DISTRHO_UI_USE_CAIRO           1
+#define DISTRHO_UI_USER_RESIZABLE      1
+#define DISTRHO_UI_DEFAULT_WIDTH       912
+#define DISTRHO_UI_DEFAULT_HEIGHT      540
+// the editor reads live voice pitches straight from the plugin (same process)
+#define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1
 #define DISTRHO_PLUGIN_IS_RT_SAFE      1
 #define DISTRHO_PLUGIN_IS_SYNTH        0
 #define DISTRHO_PLUGIN_NUM_INPUTS      2

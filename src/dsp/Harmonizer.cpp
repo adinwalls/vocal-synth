@@ -12,7 +12,9 @@ void Harmonizer::prepare (double sampleRate, float minF0, float maxF0)
     // The newest usable pitch mark trails the input by up to ~2.35 periods and a
     // grain reaches one period ahead of its centre. 2.5 periods keeps latency
     // down; when the lowest notes run ahead, the voice reuses the newest mark.
-    latency = (int) std::ceil (2.5 * analyzer.getMaxPeriod()) + 64;
+    fullLatency = (int) std::ceil (2.5 * analyzer.getMaxPeriod()) + 64;
+    shortLatency = (int) std::ceil (sampleRate * 0.003);
+    latency = lowLatency ? shortLatency : fullLatency;
 
     for (int i = 0; i < kNumVoices; ++i)
         voices[(size_t) i].prepare (analyzer, 0x9E3779B9u * (uint32_t) (i + 1));
@@ -40,11 +42,30 @@ void Harmonizer::reset()
     sustain = false;
 }
 
+void Harmonizer::setLowLatency (bool on)
+{
+    if (on == lowLatency)
+        return;
+    lowLatency = on;
+    latency = on ? shortLatency : fullLatency;
+    params.voice.lowLatency = on;
+    // Voice positions are tied to the old delay: restart them cleanly.
+    for (auto& v : voices)
+        v.kill();
+    for (int i = kMidiSlot; i < kNumVoices; ++i)
+        if (midiNote[(size_t) i] >= 0)
+        {
+            voices[(size_t) i].start ({ Target::Midi, midiNote[(size_t) i] }, 0.8f, analyzer.written() - latency);
+            voices[(size_t) i].order = ++orderCounter;
+        }
+}
+
 void Harmonizer::setParams (const HarmonizerParams& p)
 {
     const bool midiWas = midiEnabled();
     params = p;
     params.voice.key = { std::clamp (p.key, 0, 11), scaleMask (p.scale) };
+    params.voice.lowLatency = lowLatency;
     if (midiWas && ! midiEnabled())
         allNotesOff();
 }
@@ -194,6 +215,11 @@ void Harmonizer::processChunk (const float* in, float* outL, float* outR, int n)
             v.render (analyzer, params.voice, outputStart, n, pans[(size_t) i] * params.spread,
                       harmL.data(), harmR.data());
     }
+
+    for (int i = 0; i < kNumVoices; ++i)
+        meterVoice[(size_t) i].store (voices[(size_t) i].getMeterMidi(), std::memory_order_relaxed);
+    const float hz = analyzer.getF0();
+    meterInput.store (hz > 0.0f ? (float) hzToMidi (hz) : 0.0f, std::memory_order_relaxed);
 
     // Lead is rendered centred (pan 0 = -3 dB per side); undo that so a
     // centred lead keeps the input's level.

@@ -42,6 +42,7 @@ void PsolaVoice::start (const Target& t, float g, int64_t outputStart)
     renderedTo = outputStart;
     currentMidi = -1.0;
     heldNote = -1000;
+    lastHalf = maxHalf;
 }
 
 void PsolaVoice::retarget (const Target& t, float g)
@@ -60,6 +61,7 @@ void PsolaVoice::kill()
 {
     active = false;
     releasing = false;
+    pitched = false;
     env = 0.0f;
     std::fill (acc.begin(), acc.end(), 0.0f);
     std::fill (wsum.begin(), wsum.end(), 0.0f);
@@ -101,8 +103,16 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
     const int spacing = analyzer.getUnvoicedSpacing();
     const double formant = std::clamp ((double) s.formant, 0.5, 2.0);
 
-    while (synthPos - maxHalf < (double) end)
+    for (;;)
     {
+        // A grain must be placed before the play head reaches its left edge.
+        // Normally we allow for the longest possible grain. In low-latency mode
+        // we wait as long as we dare (based on the last grain's size) so each
+        // grain is built from the newest audio.
+        const int reach = s.lowLatency ? std::min (maxHalf, lastHalf + lastHalf / 4 + 8) : maxHalf;
+        if (synthPos - reach >= (double) end)
+            break;
+
         const Mark* m = analyzer.findMark (synthPos);
         if (m == nullptr)
         {
@@ -112,6 +122,7 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
 
         double step, half, f = 1.0;
         float level = 1.0f;
+        pitched = m->voiced;
         if (m->voiced)
         {
             const double want = targetMidi (*m, s);
@@ -141,6 +152,7 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
         }
 
         const int gHalf = std::max (2, (int) std::min ((double) maxHalf, half / f));
+        lastHalf = gHalf;
         const auto c = (int64_t) std::lround (synthPos);
         const double invHalf = M_PI / gHalf;
         for (int j = -gHalf + 1; j < gHalf; ++j)

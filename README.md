@@ -2,6 +2,8 @@
 
 *A live vocal harmonizer for Linux, in the spirit of Bon Iver's "Messina".*
 
+![VoxBrew Harmonizer](docs/voxbrew.png)
+
 Sing into it and it splits your one voice into a stack: a tuned lead, harmonies in key, an optional tonic drone, and voices you play from a MIDI keyboard. Every voice is made from your own voice, so it keeps your vowels and character instead of sounding like a vocoder. MIDI is optional: in **Auto** mode the harmonies follow your singing on their own.
 
 Built on [DPF](https://github.com/DISTRHO/DPF), the same way as the [Adin Brew](https://github.com/adinwalls/adin-brew) plugins. Formats: LV2, VST3 and CLAP (64-bit Linux, glibc 2.35+). Made for Harrison Mixbus 12 on Pop!_OS.
@@ -25,7 +27,17 @@ voice in ──► pitch tracker (YIN, shared) ──► pitch marks
 * **Tuned lead** is a voice at "0 scale steps", so it's the sung note snapped to the key, like the first Auto-Tune in the Messina chain.
 * **Tonic drone** holds the key's root, like the Messina's second Auto-Tune that fed the H8000.
 * **Loose** gives each voice its own small detune and slow drift so the stack sounds like a group, not a machine.
-* **Latency:** 1664 samples at 48 kHz (35 ms), reported to the host so Mixbus lines up playback. It's set by the lowest pitch tracked (75 Hz).
+* **Latency:** normally 1664 samples at 48 kHz (35 ms), reported to the host so Mixbus lines up playback. It's sized for the lowest pitch tracked (75 Hz). **Low Latency** drops the reported delay to 3 ms and builds each grain from the newest complete period, so the real delay follows your pitch: about 14 ms at A3, less for higher notes. Use it while tracking; turn it off for mixing, when exact timing matters more.
+
+## The screen
+
+Same family look as TuneBrew and LevelBrew.
+
+* **Top row:** scale menu and the harmony source buttons (Auto, MIDI, Auto + MIDI).
+* **Key buttons:** click to set the key. Green lamp = home note, yellow = in the scale, red = the note you're singing.
+* **Display:** the last 6 seconds. Amber is your voice, white the tuned lead, teal the auto voices, green the tonic, pink the MIDI voices.
+* **Auto voices panel:** click a lamp to turn voices on or off, use the arrows (or scroll) to change each voice's interval. The note each voice is singing shows on the right.
+* **Knobs:** drag up and down, hold Shift for fine moves, double-click for the default, or scroll.
 
 ## Controls
 
@@ -42,11 +54,12 @@ voice in ──► pitch tracker (YIN, shared) ──► pitch marks
 | Loose | Per-voice detune and drift, in cents. |
 | Glide, Attack, Release | Note movement and how voices fade in and out. |
 | Consonants | How much of your s, t and breath sounds the harmony voices copy. |
+| Low Latency | For monitoring while you sing (see Latency above). |
 
 ## Build and install
 
 ```bash
-sudo apt install git build-essential pkg-config
+sudo apt install git build-essential pkg-config libcairo2-dev libx11-dev libxext-dev
 git clone --recursive https://github.com/adinwalls/vocal-synth.git
 cd vocal-synth
 ./install.sh        # builds, then copies to ~/.lv2, ~/.vst3, ~/.clap
@@ -63,7 +76,8 @@ The plugin takes audio and MIDI at the same time. On an audio track, open the pl
 No DAW needed:
 
 ```bash
-make test                                   # pitch accuracy, release, formants, CPU
+make test                                   # pitch accuracy, release, formants, CPU, low latency
+make snapshot                               # draws the editor to docs/voxbrew.png
 make render
 ./build/voxbrew_render take.wav out.wav --key A --scale major --auto 2,4 --tonic 2
 ./build/voxbrew_render take.wav out.wav --mode midi --notes 57,61,64,69 --lead 0
@@ -77,7 +91,9 @@ make render
   * `VoiceAnalyzer` — input history and pitch marks shared by all voices.
   * `PsolaVoice` — one voice: TD-PSOLA, glide, detune, envelope.
   * `Harmonizer` — voice slots (lead, auto, tonic, MIDI), MIDI handling, mix.
-* `plugins/VoxBrew/` — the DPF plugin wrapper.
+* `src/VoxParams.h` — the parameter list shared by plugin and editor.
+* `src/VoxView.h` — the editor, drawn with Cairo in the Adin Brew style (hardware primitives from TuneBrew).
+* `plugins/VoxBrew/` — the DPF plugin and UI wrappers.
 * `tests/`, `tools/` — offline tests and the render tool.
 
 Licence: GPL-3.0-or-later, same as Adin Brew.

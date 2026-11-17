@@ -4,6 +4,7 @@
 #include "VoiceAnalyzer.h"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -53,6 +54,15 @@ public:
     void reset();
 
     int getLatencySamples() const { return latency; }
+
+    // Low latency is for monitoring while you sing. The plugin then adds only a
+    // few milliseconds of fixed delay and each voice builds its next grain from
+    // the newest complete period it has, so the real delay follows the pitch
+    // (about two periods: ~10 ms at A3) instead of being sized for the lowest
+    // note. Full latency keeps every grain exactly time-aligned, which is the
+    // better choice for mixing.
+    void setLowLatency (bool on);
+    bool isLowLatency() const { return lowLatency; }
     void setParams (const HarmonizerParams& p);
     const HarmonizerParams& getParams() const { return params; }
 
@@ -65,6 +75,11 @@ public:
     void process (const float* in, float* outL, float* outR, int n);
 
     float getInputHz() const { return analyzer.getF0(); }
+
+    // Meters for the editor (written on the audio thread, read from the UI).
+    // Fractional MIDI note per voice slot, 0 when the slot is silent.
+    std::array<std::atomic<float>, kNumVoices> meterVoice {};
+    std::atomic<float> meterInput { 0.0f };
     int activeVoices() const;
 
 private:
@@ -82,7 +97,8 @@ private:
     bool sustain = false;
     uint64_t orderCounter = 0;
 
-    int latency = 0;
+    int latency = 0, fullLatency = 0, shortLatency = 0;
+    bool lowLatency = false;
     std::vector<float> leadL, leadR, harmL, harmR;
 };
 
