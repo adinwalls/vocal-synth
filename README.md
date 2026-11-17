@@ -56,6 +56,22 @@ Same family look as TuneBrew and LevelBrew.
 | Consonants | How much of your s, t and breath sounds the harmony voices copy. |
 | Low Latency | For monitoring while you sing (see Latency above). |
 
+## Presets
+
+Seven factory presets show up in your DAW's preset menu for the plugin. They never change **Key** or **Low Latency**, so set your key once and flip through them.
+
+| Preset | What it is |
+|---|---|
+| Init | The defaults: tuned lead with a 3rd and 5th above. |
+| Messina Stack | The Messina recipe: dry voice, hard-tuned lead, tonic drone and three loose harmony voices, with the keyboard free to add more. |
+| Tonic Halo | Tuned lead over a low drone and an octave shimmer. |
+| Hard Stack | Four tight voices locked to the grid, no drift. |
+| Keys Choir | MIDI only: your voice sings the chords you hold. Long release. |
+| Wide Thirds | A soft, natural pair either side of the lead that keeps your vibrato. |
+| Low Shadow | A darker double an octave down. |
+
+They live in `src/VoxPresets.h`, one short block each.
+
 ## Build and install
 
 ```bash
@@ -92,6 +108,7 @@ make render
   * `PsolaVoice` — one voice: TD-PSOLA, glide, detune, envelope.
   * `Harmonizer` — voice slots (lead, auto, tonic, MIDI), MIDI handling, mix.
 * `src/VoxParams.h` — the parameter list shared by plugin and editor.
+* `src/VoxPresets.h` — the factory presets.
 * `src/VoxView.h` — the editor, drawn with Cairo in the Adin Brew style (hardware primitives from TuneBrew).
 * `plugins/VoxBrew/` — the DPF plugin and UI wrappers.
 * `tests/`, `tools/` — offline tests and the render tool.
