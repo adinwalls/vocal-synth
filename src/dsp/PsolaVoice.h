@@ -19,7 +19,8 @@ struct VoiceSettings
     float natural = 0.0f;       // 0 = locked to the note, 1 = follows the singer's vibrato and scoops
     float attackMs = 15.0f;
     float releaseMs = 150.0f;
-    float consonants = 0.5f;    // level of unpitched sounds (s, t, breaths) in harmony voices
+    float consonants = 0.5f;
+    bool lowLatency = false;    // place grains as late as possible (set by the Harmonizer)    // level of unpitched sounds (s, t, breaths) in harmony voices
 };
 
 // What a voice sings.
@@ -50,6 +51,10 @@ public:
 
     uint64_t order = 0; // allocation order, for voice stealing
 
+    // For the display: the pitch this voice is singing right now as a
+    // fractional MIDI note, or 0 while it is silent or on a consonant.
+    float getMeterMidi() const { return (active && pitched && env > 0.02f) ? (float) currentMidi : 0.0f; }
+
     // Renders `n` samples starting at input-timeline position `outputStart`
     // (= samples written - latency) and adds them, panned, into outL/outR.
     void render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
@@ -61,10 +66,11 @@ private:
 
     double fs = 48000.0;
     int maxHalf = 600;
+    int lastHalf = 600;       // half length of the previous grain
     std::vector<float> acc, wsum;
     int64_t mask = 0;
 
-    bool active = false, releasing = false;
+    bool active = false, releasing = false, pitched = false;
     Target target;
     float gain = 1.0f;
     float env = 0.0f;

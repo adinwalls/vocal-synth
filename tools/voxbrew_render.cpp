@@ -58,7 +58,8 @@ int main (int argc, char** argv)
             "       voxbrew_render --synth HZ SECONDS out.wav [options]\n"
             "options: --key A --scale major --mode auto|midi|both --auto 2,4,-3\n"
             "         --notes 57,61,64 --tonic OCTAVE --dry X --lead X --harmony X\n"
-            "         --formant X --natural X --loose CENTS --glide MS --spread X\n");
+            "         --formant X --natural X --loose CENTS --glide MS --spread X\n"
+            "         --low-latency\n");
         return 2;
     }
 
@@ -83,9 +84,12 @@ int main (int argc, char** argv)
 
     HarmonizerParams p;
     std::vector<int> notes;
-    for (; argi + 1 < argc; argi += 2)
+    bool lowLatency = false;
+    for (; argi < argc; argi += 2)
     {
         const std::string o = argv[argi];
+        if (o == "--low-latency") { lowLatency = true; --argi; continue; }
+        if (argi + 1 >= argc) { std::fprintf (stderr, "%s needs a value\n", o.c_str()); return 2; }
         const char* v = argv[argi + 1];
         if (o == "--key") p.key = parseKey (v);
         else if (o == "--scale") p.scale = parseScale (v);
@@ -123,6 +127,7 @@ int main (int argc, char** argv)
 
     Harmonizer h;
     h.prepare (in.sampleRate);
+    h.setLowLatency (lowLatency);
     h.setParams (p);
     for (int n : notes) h.noteOn (n, 0.9f);
 

@@ -28,6 +28,14 @@ test: build/test_engine
 
 render: build/voxbrew_render
 
+# Draw the editor to docs/voxbrew.png without a DAW (needs libcairo2-dev)
+build/ui_snapshot: tools/ui_snapshot.cpp $(DSP) src/*.h src/dsp/*.h tools/*.h
+	@mkdir -p build
+	$(CXX) $(CXXFLAGS_TOOLS) $$(pkg-config --cflags cairo) -o $@ tools/ui_snapshot.cpp $(DSP) $$(pkg-config --libs cairo)
+
+snapshot: build/ui_snapshot
+	./build/ui_snapshot docs/voxbrew.png 1
+
 install: all
 	./install.sh
 
@@ -35,4 +43,4 @@ clean:
 	@for p in $(PLUGINS); do $(MAKE) -C plugins/$$p clean; done
 	rm -rf bin build dpf/utils/lv2_ttl_generator
 
-.PHONY: all plugins gen test render install clean
+.PHONY: all plugins gen test render snapshot install clean

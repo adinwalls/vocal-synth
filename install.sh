@@ -1,8 +1,8 @@
 #!/bin/sh
-# Build (if needed) and install VoxBrew into your home folder. No sudo needed.
+# Build and install VoxBrew into your home folder. No sudo needed.
 set -e
 cd "$(dirname "$0")"
-[ -d bin/VoxBrew.lv2 ] || make
+make
 mkdir -p ~/.lv2 ~/.vst3 ~/.clap
 rm -rf ~/.lv2/VoxBrew.lv2 ~/.vst3/VoxBrew.vst3
 cp -r bin/VoxBrew.lv2 ~/.lv2/
