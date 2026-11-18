@@ -6,6 +6,8 @@
 #include "DistrhoPlugin.hpp"
 #include "../../src/VoxPresets.h"
 
+#include <cstring>
+
 START_NAMESPACE_DISTRHO
 
 using namespace voxbrew;
@@ -13,7 +15,7 @@ using namespace voxbrew;
 class VoxBrewPlugin : public Plugin
 {
 public:
-    VoxBrewPlugin() : Plugin (pCount, kNumPresets, 0)
+    VoxBrewPlugin() : Plugin (pCount, kNumPresets, 2)
     {
         for (int i = 0; i < pCount; ++i)
             values[i] = kSpecs[i].def;
@@ -35,7 +37,7 @@ protected:
     const char* getMaker() const override { return "Adin Walls"; }
     const char* getLicense() const override { return "GPL-3.0-or-later"; }
     const char* getHomePage() const override { return "https://github.com/adinwalls/vocal-synth"; }
-    uint32_t getVersion() const override { return d_version (0, 3, 0); }
+    uint32_t getVersion() const override { return d_version (0, 4, 0); }
 
     void initAudioPort (bool input, uint32_t index, AudioPort& port) override
     {
@@ -92,6 +94,42 @@ protected:
         apply();
     }
 
+    // ---- session state: the written notes and the melody scan ----
+    void initState (uint32_t index, State& state) override
+    {
+        if (index == 0)
+        {
+            state.key = "notes"; state.label = "Harmony Notes"; state.defaultValue = "";
+            state.description = "Harmony notes on the song timeline (start ms, end ms, MIDI note)";
+        }
+        else
+        {
+            state.key = "scan"; state.label = "Melody Scan"; state.defaultValue = "";
+            state.hints = kStateIsOnlyForDSP;
+            state.description = "Your sung pitch along the song, shown in the Notes view";
+        }
+    }
+
+    String getState (const char* key) const override
+    {
+        if (std::strcmp (key, "notes") == 0) return String (engine.notes().encode().c_str());
+        if (std::strcmp (key, "scan") == 0) return String (engine.scan.encode().c_str());
+        return String();
+    }
+
+    void setState (const char* key, const char* value) override
+    {
+        if (std::strcmp (key, "notes") == 0)
+        {
+            NoteSet ns; ns.decode (value);
+            engine.setNotes (ns);
+        }
+        else if (std::strcmp (key, "scan") == 0)
+        {
+            if (value && *value) engine.scan.decode (value);
+        }
+    }
+
     float getParameterValue (uint32_t index) const override
     {
         if (index == pOutPitch)  return engine.getInputHz();
@@ -127,6 +165,12 @@ protected:
     void run (const float** inputs, float** outputs, uint32_t frames,
               const MidiEvent* midi, uint32_t midiCount) override
     {
+#if defined(DISTRHO_PLUGIN_TARGET_CLAP)
+        engine.setTimeline (false, false, 0.0);   // DPF gives CLAP plugins no song position
+#else
+        const TimePosition& tp = getTimePosition();
+        engine.setTimeline (true, tp.playing, (double) tp.frame / getSampleRate());
+#endif
         uint32_t pos = 0, ev = 0;
         while (pos < frames)
         {

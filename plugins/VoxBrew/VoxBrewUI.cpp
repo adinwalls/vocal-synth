@@ -3,6 +3,7 @@
 #include "../../src/VoxView.h"
 
 #include <chrono>
+#include <cstring>
 
 START_NAMESPACE_DISTRHO
 
@@ -18,7 +19,10 @@ public:
     {
         // the editor reads live voice pitches straight from the plugin
         if (auto* const p = static_cast<VoxBrewPlugin*> (static_cast<Plugin*> (getPluginInstancePointer())))
+        {
             view.setEngine (p->enginePtr());
+            view.setNotes (p->enginePtr()->notes());
+        }
     }
 
 protected:
@@ -37,6 +41,16 @@ protected:
         for (int i = 0; i < voxbrew::pCount; ++i) view.setValue (i, v[i]);
     }
 
+    void stateChanged (const char* key, const char* value) override
+    {
+        if (std::strcmp (key, "notes") == 0)
+        {
+            voxbrew::NoteSet ns; ns.decode (value);
+            view.setNotes (ns);
+            repaint();
+        }
+    }
+
     void uiIdle() override
     {
         // redraw only when something on screen actually changed
@@ -47,6 +61,7 @@ protected:
     void setParam (int index, float value) override { setParameterValue ((uint32_t) index, value); }
     void beginEdit (int index) override { editParameter ((uint32_t) index, true); }
     void endEdit (int index) override { editParameter ((uint32_t) index, false); }
+    void notesChanged (const voxbrew::NoteSet& ns) override { setState ("notes", ns.encode().c_str()); }
 
     // ---- drawing & input ----
     void onCairoDisplay (const CairoGraphicsContext& context) override

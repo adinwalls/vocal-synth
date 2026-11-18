@@ -38,7 +38,8 @@ struct ParamSpec
 
 static const ParamSpec kSpecs[pCount] = {
     { "Harmony Source", "Source", "mode", "", 0, kModeCount - 1, kModeAuto, kChoice,
-      "Auto: harmonies in key follow your voice. MIDI: voices play the notes you hold. Auto + MIDI: both." },
+      "Auto: harmonies in key follow your voice. MIDI: voices play the notes you hold. Auto + MIDI: both. "
+      "Notes: voices play the notes written on the plugin's own timeline." },
     { "Key", "Key", "key", "", 0, 11, 0, kChoice, "" },
     { "Scale", "Scale", "scale", "", 0, kScaleCount - 1, kMajor, kChoice, "" },
     { "Auto Voices", "Voices", "auto_voices", "", 0, 4, 2, kInt, "How many automatic harmony voices sing" },
@@ -71,7 +72,7 @@ static const char* const kScaleNames[kScaleCount] = {
     "Chromatic", "Major", "Minor", "Harmonic Minor", "Melodic Minor",
     "Major Pentatonic", "Minor Pentatonic", "Blues", "Dorian", "Mixolydian"
 };
-static const char* const kModeNames[kModeCount] = { "Auto", "MIDI", "Auto + MIDI" };
+static const char* const kModeNames[kModeCount] = { "Auto", "MIDI", "Auto + MIDI", "Notes" };
 
 // "3rd up" style name for a number of scale steps (exact for 7-note scales).
 inline void stepLabel (int steps, char* buf, size_t n, bool withNumber)

@@ -8,6 +8,7 @@ namespace voxbrew
 
 void Harmonizer::prepare (double sampleRate, float minF0, float maxF0)
 {
+    fs = sampleRate;
     analyzer.prepare (sampleRate, minF0, maxF0);
     // The newest usable pitch mark trails the input by up to ~2.35 periods and a
     // grain reaches one period ahead of its centre. 2.5 periods keeps latency
@@ -40,6 +41,8 @@ void Harmonizer::reset()
     midiNote.fill (-1);
     sustained.fill (false);
     sustain = false;
+    written.fill (false);
+    anyWritten = false;
 }
 
 void Harmonizer::setLowLatency (bool on)
@@ -80,9 +83,12 @@ int Harmonizer::activeVoices() const
 
 void Harmonizer::noteOn (int note, float velocity)
 {
-    if (! midiEnabled())
-        return;
+    if (midiEnabled())
+        startMidiVoice (note, velocity);
+}
 
+void Harmonizer::startMidiVoice (int note, float velocity)
+{
     const float gain = 0.4f + 0.6f * std::clamp (velocity, 0.0f, 1.0f);
     const Target t { Target::Midi, note };
     const int64_t outputStart = analyzer.written() - latency;
@@ -113,6 +119,51 @@ void Harmonizer::noteOn (int note, float velocity)
     v.order = ++orderCounter;
     midiNote[(size_t) slot] = note;
     sustained[(size_t) slot] = false;
+}
+
+void Harmonizer::releaseMidiVoice (int note)
+{
+    for (int i = kMidiSlot; i < kNumVoices; ++i)
+        if (midiNote[(size_t) i] == note && voices[(size_t) i].isActive())
+        {
+            voices[(size_t) i].release();
+            midiNote[(size_t) i] = -1;
+            sustained[(size_t) i] = false;
+        }
+}
+
+void Harmonizer::setTimeline (bool known, bool playing, double seconds)
+{
+    tlValid = known && playing;
+    tlSeconds = seconds;
+    meterPlaying.store (tlValid, std::memory_order_relaxed);
+    meterPos.store (known ? seconds : -1.0, std::memory_order_relaxed);
+}
+
+// Starts and stops voices for the notes written on the timeline. `seconds` is
+// the song position of the sound leaving the plugin now, or negative to stop.
+void Harmonizer::updateWrittenNotes (double seconds)
+{
+    std::array<bool, 128> want {};
+    bool any = false;
+    if (seconds >= 0.0 && params.mode == kModeNotes)
+    {
+        const NoteSet& ns = notes();
+        for (int i = 0; i < ns.n; ++i)
+        {
+            if (ns.r[i].start > seconds) break; // sorted by start
+            if (seconds < ns.r[i].end) { want[(size_t) ns.r[i].note] = true; any = true; }
+        }
+    }
+    if (! any && ! anyWritten)
+        return;
+    for (int n = 0; n < 128; ++n)
+    {
+        if (want[(size_t) n] && ! written[(size_t) n]) startMidiVoice (n, 0.8f);
+        else if (! want[(size_t) n] && written[(size_t) n]) releaseMidiVoice (n);
+    }
+    written = want;
+    anyWritten = any;
 }
 
 void Harmonizer::noteOff (int note)
@@ -196,6 +247,18 @@ void Harmonizer::processChunk (const float* in, float* outL, float* outR, int n)
     analyzer.process (in, n);
     const int64_t outputStart = analyzer.written() - latency;
     analyzer.pruneBefore (outputStart - 4 * analyzer.getMaxPeriod());
+
+    if (tlValid)
+    {
+        // Learn the melody where it was sung (the tracker answers about 20 ms late),
+        // and play written notes for the sound that is leaving the plugin now.
+        const float hzNow = analyzer.getF0();
+        scan.write (tlSeconds - 0.02, hzNow > 0.0f ? hzToMidi (hzNow) : 0.0);
+        updateWrittenNotes (std::max (0.0, tlSeconds - latency / fs));
+        tlSeconds += n / fs;
+    }
+    else
+        updateWrittenNotes (-1.0);
 
     updateFixedVoices (outputStart);
 
