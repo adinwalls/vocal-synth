@@ -30,6 +30,7 @@ public:
         virtual void setParam (int index, float value) = 0;
         virtual void beginEdit (int index) = 0;
         virtual void endEdit (int index) = 0;
+        virtual void notesChanged (const NoteSet&) {}   // suggested-note edits
         virtual ~Host() {}
     };
 
@@ -45,6 +46,9 @@ public:
     // The editor reads live voice pitches straight from the engine (same process).
     void setEngine (const Harmonizer* e) { eng = e; dirty = true; }
     void setValue (int i, float v) { if (i >= 0 && i < pCount && values[i] != v) { values[i] = v; if (kSpecs[i].kind != kOutput) dirty = true; } }
+
+    // Notes written on the timeline (from the saved session, or the engine at start-up).
+    void setNotes (const NoteSet& n) { if (gdrag == dNone) { notes = n; if (sel >= notes.n) sel = -1; dirty = true; } }
 
     float getValue (int i) const { return i >= 0 && i < pCount ? values[i] : 0.0f; }
 
@@ -85,6 +89,16 @@ public:
             if (any) lastActive = now;
             if (now - lastActive < kWindow + 0.5) dirty = true;
         }
+        if (notesMode() && eng != nullptr)
+        {
+            const double pos = eng->meterPos.load (std::memory_order_relaxed);
+            const bool playing = eng->meterPlaying.load (std::memory_order_relaxed);
+            const uint32_t ver = eng->scan.version.load (std::memory_order_relaxed);
+            if (playing && gdrag == dNone && (pos < viewStart || pos > viewStart + kViewLen * 0.9))
+                viewStart = std::max (0.0, pos - kViewLen * 0.1);
+            if (playing || pos != lastPos || ver != lastScanVer) dirty = true;
+            lastPos = pos; lastScanVer = ver;
+        }
         const bool d = dirty;
         dirty = false;
         return d;
@@ -118,7 +132,7 @@ public:
         cairo_translate (cr, kCheek, 0);
         drawHeader (cr);
         drawKeyStrip (cr);
-        drawGraph (cr);
+        if (notesMode()) drawNoteEditor (cr); else drawGraph (cr);
         drawVoicePanel (cr);
         pushButton (cr, kLowLatBtn, "LOW LATENCY", values[pLowLatency] > 0.5f, kAmber, 9.5, 12);
         for (int k = 0; k < kNumKnobs; ++k) drawKnob (cr, k);
@@ -142,6 +156,25 @@ public:
         for (int m = 0; m < kModeCount; ++m)
             if (inRect (x, y, modeBtn (m))) { commit (pMode, (float) m); return true; }
         if (inRect (x, y, kLowLatBtn)) { commit (pLowLatency, values[pLowLatency] > 0.5f ? 0.f : 1.f); return true; }
+
+        if (notesMode())
+        {
+            const bool wasSuggest = confirmSuggest, wasClear = confirmClear;
+            confirmSuggest = confirmClear = false;
+            if (inRect (x, y, kSuggestBtn))
+            {
+                if (notes.n > 0 && ! wasSuggest) confirmSuggest = true;   // second press replaces your notes
+                else suggest();
+                return true;
+            }
+            if (inRect (x, y, kClearBtn))
+            {
+                if (notes.n > 0 && ! wasClear) confirmClear = true;
+                else if (notes.n > 0) { notes.n = 0; sel = -1; notify(); }
+                return true;
+            }
+            if (inRect (x, y, kGraph)) { editorDown (x, y, timeSec); return true; }
+        }
 
         const int cell = keyCellAt (x, y);
         if (cell >= 0) { commit (pKey, (float) cell); return true; }
@@ -183,6 +216,7 @@ public:
 
     bool mouseUp (double, double)
     {
+        if (gdrag != dNone) { editorUp(); return true; }
         if (dragKnob >= 0) { host->endEdit (kKnobParams[dragKnob]); dragKnob = -1; dirty = true; return true; }
         return false;
     }
@@ -193,6 +227,7 @@ public:
         const int hk = knobAt (x, y), hc = keyCellAt (x, y), hm = menuOpen ? menuItemAt (x, y) : -1;
         if (hk != hoverKnob || hc != hoverCell || hm != hoverMenu) dirty = true;
         hoverKnob = hk; hoverCell = hc; hoverMenu = hm;
+        if (gdrag != dNone) { editorDrag (x, y, fine); return true; }
         if (dragKnob < 0) return false;
         const int p = kKnobParams[dragKnob];
         if (fine != dragFine) { dragNorm = toNorm (p, values[p]); dragY = y; dragFine = fine; }
@@ -221,6 +256,22 @@ public:
         }
         for (int r = 0; r < kRows; ++r)
             if (inRect (x, y, rowRect (r))) { nudgeRow (r, dy > 0 ? 1 : -1); return true; }
+        if (notesMode() && inRect (x, y, kGraph))
+        {
+            const int hit = noteAt (x, y);
+            if (hit >= 0)
+            {
+                // over a note: step it through the scale
+                sel = hit;
+                const KeyContext kc = keyCtx();
+                Note& n = notes.r[hit];
+                n.note = std::clamp (kc.inScale (n.note) ? kc.shiftDegrees (n.note, dy > 0 ? 1 : -1) : n.note + (dy > 0 ? 1 : -1), 24, 108);
+                notify();
+            }
+            else
+                viewStart = std::max (0.0, viewStart + (dy > 0 ? -1.0 : 1.0));
+            return true;
+        }
         const int k = knobAt (x, y);
         if (k < 0) return false;
         const int p = kKnobParams[k];
@@ -238,6 +289,20 @@ private:
     const Sample& at (int k) const { return hist[(size_t) ((histHead - 1 - k + kHistSize) % kHistSize)]; }
 
     Host* host;
+
+    // suggested notes editor
+    enum Drag { dNone, dMove, dLeft, dRight, dPan };
+    NoteSet notes;
+    int sel = -1;
+    Drag gdrag = dNone;
+    double viewStart = 0.0, dragOffT = 0.0, panX = 0.0, panStart = 0.0;
+    double edCenter = 60.0, edSpan = 26.0;
+    double lastPos = -2.0, lastNoteClickT = -1.0;
+    int lastNoteClick = -3;
+    uint32_t lastScanVer = 0;
+    bool confirmSuggest = false, confirmClear = false, edited = false;
+    double lastFitStart = -1.0;
+    uint32_t lastFitVer = 0xFFFFFFFFu;
     const Harmonizer* eng = nullptr;
     float values[pCount];
     double nowT = 0, lastSample = -1, lastActive = -100, center = 0;
@@ -257,6 +322,9 @@ private:
     static constexpr Rect kPanel     = { 624, 124, 212, 240 };
     static constexpr double kModTop = 380, kSeamX = 506;
     static constexpr Rect kLowLatBtn = { 716, 386, 120, 22 };
+    static constexpr Rect kSuggestBtn = { 634, 328, 100, 26 };
+    static constexpr Rect kClearBtn   = { 742, 328, 84, 26 };
+    static constexpr double kViewLen = 10.0;   // seconds shown in the note editor
     static constexpr int kRows = 5;            // 4 auto voices + tonic
     static constexpr double kRowTop = 150, kRowH = 33;
     static constexpr int kNumKnobs = 12;
@@ -269,7 +337,7 @@ private:
 
     static Rect modeBtn (int m)
     {
-        static const Rect r[kModeCount] = { { 490, 14, 96, 34 }, { 594, 14, 96, 34 }, { 698, 14, 128, 34 } };
+        static const Rect r[kModeCount] = { { 488, 14, 80, 34 }, { 574, 14, 80, 34 }, { 660, 14, 80, 34 }, { 746, 14, 84, 34 } };
         return r[m];
     }
     static Rect rowRect (int r)   { return { kPanel.x + 6, kRowTop + r * kRowH + (r == 4 ? 8 : 0), kPanel.w - 12, kRowH - 3 }; }
@@ -585,7 +653,8 @@ private:
     {
         return { (int) values[pKey], scaleMask ((int) values[pScale]) };
     }
-    bool autoOn() const { return (int) values[pMode] != kModeMidi; }
+    bool autoOn() const { return (int) values[pMode] == kModeAuto || (int) values[pMode] == kModeAutoAndMidi; }
+    bool notesMode() const { return (int) values[pMode] == kModeNotes; }
     bool midiOn() const { return (int) values[pMode] != kModeAuto; }
     float sungMidi() const { return histCount > 0 && nowT - at (0).t < 0.3 ? at (0).in : 0.0f; }
 
@@ -673,8 +742,8 @@ private:
         cairo_close_path (cr); cairo_fill (cr);
 
         // harmony source
-        static const char* const names[kModeCount] = { "AUTO", "MIDI", "AUTO + MIDI" };
-        static const C cols[kModeCount] = { kAccent, kCapPink, kAmber };
+        static const char* const names[kModeCount] = { "AUTO", "MIDI", "BOTH", "NOTES" };
+        static const C cols[kModeCount] = { kAccent, kCapPink, kAmber, kGreen };
         for (int m = 0; m < kModeCount; ++m)
             pushButton (cr, modeBtn (m), names[m], (int) values[pMode] == m, cols[m], 10.5);
     }
@@ -800,8 +869,9 @@ private:
     {
         const Rect p = kPanel;
         window (cr, p);
-        rgb (cr, kDim); text (cr, "AUTO VOICES", p.x + 12, p.y + 18, 9, -1);
-        const bool aOn = autoOn();
+        const bool nm = notesMode();
+        rgb (cr, kDim); text (cr, nm ? "VOICES TO SUGGEST" : "AUTO VOICES", p.x + 12, p.y + 18, 9, -1);
+        const bool aOn = autoOn() || nm;   // in Notes mode the rows are the recipe for SUGGEST
         if (! aOn) { rgb (cr, kCapPink, 0.9); text (cr, "MIDI ONLY", p.x + p.w - 12, p.y + 18, 8, 1); }
 
         const KeyContext k = keyCtx();
@@ -848,6 +918,15 @@ private:
             text (cr, note[0] ? note : "-", b.x + b.w - 8, b.y + b.h / 2 + 4, 12, 1);
         }
 
+        if (nm)
+        {
+            const bool ready = eng != nullptr && eng->scan.len.load (std::memory_order_relaxed) > 0;
+            pushButton (cr, kSuggestBtn, confirmSuggest ? "REPLACE?" : "SUGGEST", confirmSuggest || (ready && notes.n == 0),
+                        confirmSuggest ? kRed : kAmber, 9.5, 12, ! ready);
+            pushButton (cr, kClearBtn, confirmClear ? "SURE?" : "CLEAR", confirmClear, kRed, 9.5, 12, notes.n == 0);
+            return;
+        }
+
         // what you're singing
         const double y = p.y + p.h - 16;
         rgb (cr, kDim); text (cr, "YOU", p.x + 12, y, 9, -1);
@@ -861,6 +940,282 @@ private:
             rgb (cr, kDim); text (cr, cb, p.x + p.w - 14, y, 9, 1);
         }
         else { rgb (cr, kDim, 0.6); text (cr, "-", p.x + 104, y, 12, 0); }
+    }
+
+    // ---------------- suggested notes editor ----------------
+    double edX (double t) const { return kGraph.x + (t - viewStart) / kViewLen * kGraph.w; }
+    double edT (double x) const { return viewStart + (x - kGraph.x) / kGraph.w * kViewLen; }
+    double edRow() const { return kGraph.h / edSpan; }
+    double edY (double midi) const { return kGraph.y + kGraph.h / 2 - (midi - edCenter) * edRow(); }
+    double edMidi (double y) const { return edCenter + (kGraph.y + kGraph.h / 2 - y) / edRow(); }
+
+    Rect noteRect (const Note& n) const
+    {
+        const double h = std::max (7.0, edRow() - 1.0);
+        return { edX (n.start), edY (n.note) - h / 2, std::max (3.0, edX (n.end) - edX (n.start)), h };
+    }
+    int noteAt (double x, double y) const
+    {
+        for (int i = notes.n - 1; i >= 0; --i)
+        {
+            const Rect r = noteRect (notes.r[i]);
+            if (x >= r.x - 2 && x < r.x + r.w + 2 && y >= r.y - 2 && y < r.y + r.h + 2) return i;
+        }
+        return -1;
+    }
+
+    void notify()
+    {
+        // keep the selection on the same note after sorting
+        const Note keep = sel >= 0 && sel < notes.n ? notes.r[sel] : Note { -1, -1, -1 };
+        notes.sort();
+        sel = -1;
+        for (int i = 0; i < notes.n && keep.note >= 0; ++i)
+            if (notes.r[i].start == keep.start && notes.r[i].end == keep.end && notes.r[i].note == keep.note) { sel = i; break; }
+        host->notesChanged (notes);
+        dirty = true;
+    }
+
+    // Fill the timeline with harmony notes for the melody heard so far.
+    void suggest()
+    {
+        if (eng == nullptr) return;
+        int steps[4], n = 0;
+        for (int r = 0; r < std::min (4, (int) values[pAutoVoices]); ++r)
+            steps[n++] = (int) std::lround (values[pAuto1 + r]);
+        if (n == 0) { steps[0] = 2; n = 1; }   // no voices switched on: offer a third above
+        suggestNotes (eng->scan, keyCtx(), steps, n, notes);
+        sel = -1;
+        if (notes.n > 0 && (notes.r[0].start < viewStart || notes.r[0].start > viewStart + kViewLen))
+            viewStart = std::max (0.0, notes.r[0].start - 1.0);
+        fitRange();
+        host->notesChanged (notes);
+        dirty = true;
+    }
+
+    // Centre the editor on what is visible (melody and notes).
+    void fitRange()
+    {
+        double lo = 1e9, hi = -1e9;
+        if (eng != nullptr)
+        {
+            const int a = std::max (0, (int) (viewStart / MelodyScan::kHop));
+            const int b = std::min (eng->scan.len.load (std::memory_order_relaxed), (int) ((viewStart + kViewLen) / MelodyScan::kHop));
+            for (int i = a; i < b; i += 2)
+            {
+                const float m = eng->scan.at (i);
+                if (m > 0.0f) { lo = std::min (lo, (double) m); hi = std::max (hi, (double) m); }
+            }
+        }
+        for (int i = 0; i < notes.n; ++i)
+            if (notes.r[i].end > viewStart && notes.r[i].start < viewStart + kViewLen)
+            { lo = std::min (lo, (double) notes.r[i].note); hi = std::max (hi, (double) notes.r[i].note); }
+        if (hi < lo) return;
+        edSpan = std::clamp (hi - lo + 8.0, 24.0, 48.0);
+        edCenter = std::round ((lo + hi) / 2);
+    }
+
+    void editorDown (double x, double y, double timeSec)
+    {
+        const int hit = noteAt (x, y);
+        const bool dbl = timeSec - lastNoteClickT < 0.35 && lastNoteClick == (hit >= 0 ? hit : -2);
+        lastNoteClickT = timeSec;
+        lastNoteClick = hit >= 0 ? hit : -2;
+
+        if (hit >= 0)
+        {
+            if (dbl) { notes.remove (hit); sel = -1; lastNoteClick = -3; notify(); return; }   // double-click a note: delete it
+            sel = hit;
+            const Rect r = noteRect (notes.r[hit]);
+            const double edge = r.w > 18 ? 6 : 0;
+            gdrag = x < r.x + edge ? dLeft : x > r.x + r.w - edge ? dRight : dMove;
+            dragOffT = edT (x) - notes.r[hit].start;
+            edited = false;
+            return;
+        }
+        if (dbl)
+        {
+            // double-click empty space: a new half-second note on the nearest note of the key
+            const double t = std::max (0.0, edT (x) - 0.05);
+            if (notes.add (t, t + 0.5, std::clamp (keyCtx().nearest (edMidi (y)), 24, 108)))
+            {
+                sel = notes.n - 1;
+                notify();
+            }
+            lastNoteClick = -3;
+            return;
+        }
+        sel = -1;
+        gdrag = dPan; panX = x; panStart = viewStart;
+    }
+
+    void editorDrag (double x, double y, bool fine)
+    {
+        dirty = true;
+        if (gdrag == dPan)
+        {
+            viewStart = std::max (0.0, panStart - (x - panX) / kGraph.w * kViewLen);
+            return;
+        }
+        if (sel < 0 || sel >= notes.n) return;
+        Note& n = notes.r[sel];
+        const double t = edT (x);
+        edited = true;
+        if (gdrag == dMove)
+        {
+            const double len = n.end - n.start;
+            n.start = std::max (0.0, t - dragOffT);
+            n.end = n.start + len;
+            // snaps to the key; hold Shift for any semitone
+            const double m = edMidi (y);
+            n.note = std::clamp (fine ? (int) std::lround (m) : keyCtx().nearest (m), 24, 108);
+        }
+        else if (gdrag == dLeft)  n.start = std::clamp (t, 0.0, n.end - 0.05);
+        else if (gdrag == dRight) n.end = std::max (n.start + 0.05, t);
+    }
+
+    void editorUp()
+    {
+        const bool changed = gdrag != dPan && edited;
+        const bool panned = gdrag == dPan;
+        gdrag = dNone;
+        if (changed) notify();
+        if (panned) fitRange();
+        dirty = true;
+    }
+
+    static void fmtTime (double sec, char* buf, size_t n)
+    {
+        const int s = (int) sec;
+        std::snprintf (buf, n, "%d:%02d", s / 60, s % 60);
+    }
+
+    void drawNoteEditor (cairo_t* cr)
+    {
+        const Rect g = kGraph;
+        if (gdrag == dNone && (lastFitStart != viewStart || lastFitVer != lastScanVer))
+        {
+            fitRange();
+            lastFitStart = viewStart; lastFitVer = lastScanVer;
+        }
+        window (cr, g);
+        cairo_save (cr);
+        rrect (cr, g.x, g.y, g.w, g.h, 6); cairo_clip (cr);
+
+        const KeyContext k = keyCtx();
+        const double rowH = edRow();
+        const int lo = (int) std::floor (edCenter - edSpan / 2) - 1, hi = (int) std::ceil (edCenter + edSpan / 2) + 1;
+
+        // note lanes, as in the live view
+        for (int n = lo; n <= hi; ++n)
+        {
+            const double y = edY (n);
+            const int deg = ((n - k.key) % 12 + 12) % 12;
+            const bool in = k.inScale (n), home = deg == 0;
+            if (in)
+            {
+                cairo_set_source_rgba (cr, 1, 1, 1, home ? 0.075 : 0.035);
+                cairo_rectangle (cr, g.x, y - rowH / 2, g.w, rowH - 0.5); cairo_fill (cr);
+            }
+            if (in && (home || deg == 7 || deg == 4 || deg == 3))
+            {
+                char nb[16]; noteName (n, nb, sizeof nb);
+                rgb (cr, home ? kAmber : kDim, home ? 0.95 : 0.7);
+                text (cr, nb, g.x + 10, y + 3, 8, -1);
+            }
+        }
+        // seconds
+        cairo_set_line_width (cr, 1);
+        for (int sec = (int) std::ceil (viewStart); sec < viewStart + kViewLen; ++sec)
+        {
+            const double x = std::floor (edX (sec)) + 0.5;
+            cairo_set_source_rgba (cr, 1, 1, 1, sec % 5 == 0 ? 0.10 : 0.05);
+            cairo_move_to (cr, x, g.y); cairo_line_to (cr, x, g.y + g.h); cairo_stroke (cr);
+            if (sec % 2 == 0)
+            {
+                char tb[16]; fmtTime (sec, tb, sizeof tb);
+                rgb (cr, kDim, 0.8); text (cr, tb, x + 4, g.y + g.h - 6, 8, -1);
+            }
+        }
+
+        // your melody, as heard while the song played
+        int scanLen = 0;
+        if (eng != nullptr)
+        {
+            scanLen = eng->scan.len.load (std::memory_order_relaxed);
+            rgb (cr, kAmber, 0.9); cairo_set_line_width (cr, 1.6);
+            cairo_set_line_cap (cr, CAIRO_LINE_CAP_ROUND); cairo_set_line_join (cr, CAIRO_LINE_JOIN_ROUND);
+            const int a = std::max (0, (int) (viewStart / MelodyScan::kHop));
+            const int b = std::min (scanLen, (int) ((viewStart + kViewLen) / MelodyScan::kHop) + 1);
+            bool pen = false; float last = 0;
+            for (int i = a; i < b; ++i)
+            {
+                const float m = eng->scan.at (i);
+                if (m <= 0.0f) { pen = false; continue; }
+                const double x = edX (i * MelodyScan::kHop), y = edY (m);
+                if (pen && std::abs (m - last) < 1.5f) cairo_line_to (cr, x, y);
+                else { cairo_move_to (cr, x + 0.01, y); cairo_line_to (cr, x, y); }
+                pen = true; last = m;
+            }
+            cairo_stroke (cr);
+        }
+
+        // the harmony notes
+        for (int i = 0; i < notes.n; ++i)
+        {
+            const Note& n = notes.r[i];
+            if (n.end < viewStart || n.start > viewStart + kViewLen) continue;
+            const Rect r = noteRect (n);
+            const bool s = i == sel;
+            cairo_set_source_rgba (cr, 0, 0, 0, 0.35); rrect (cr, r.x + 1, r.y + 1.5, r.w, r.h, 2.5); cairo_fill (cr);
+            cairo_pattern_t* gr = cairo_pattern_create_linear (0, r.y, 0, r.y + r.h);
+            const C top = mix (kAccent, C { 1, 1, 1 }, s ? 0.45 : 0.15), bot = mix (kAccent, C { 0, 0, 0 }, s ? 0.05 : 0.30);
+            cairo_pattern_add_color_stop_rgb (gr, 0, top.r, top.g, top.b);
+            cairo_pattern_add_color_stop_rgb (gr, 1, bot.r, bot.g, bot.b);
+            cairo_set_source (cr, gr); rrect (cr, r.x, r.y, r.w, r.h, 2.5); cairo_fill (cr); cairo_pattern_destroy (gr);
+            if (s) { rgb (cr, kText); cairo_set_line_width (cr, 1.4); rrect (cr, r.x - 0.5, r.y - 0.5, r.w + 1, r.h + 1, 3); cairo_stroke (cr); }
+            if (r.w > 26 && r.h >= 8)
+            {
+                char nb[16]; noteName (n.note, nb, sizeof nb);
+                cairo_set_source_rgba (cr, 0.03, 0.10, 0.12, 0.95);
+                text (cr, nb, r.x + 5, r.y + r.h / 2 + 3, std::min (9.0, r.h), -1);
+            }
+        }
+
+        // playhead
+        const double pos = eng != nullptr ? eng->meterPos.load (std::memory_order_relaxed) : -1.0;
+        if (pos >= viewStart && pos <= viewStart + kViewLen)
+        {
+            const double x = std::floor (edX (pos)) + 0.5;
+            rgb (cr, kText, 0.9); cairo_set_line_width (cr, 1.2);
+            cairo_move_to (cr, x, g.y); cairo_line_to (cr, x, g.y + g.h); cairo_stroke (cr);
+        }
+
+        // legend and help
+        rgb (cr, kAmber); cairo_set_line_width (cr, 2.4);
+        cairo_move_to (cr, g.x + g.w - 122, g.y + 13); cairo_line_to (cr, g.x + g.w - 106, g.y + 13); cairo_stroke (cr);
+        rgb (cr, kPrint, 0.9); text (cr, "YOU", g.x + g.w - 100, g.y + 16, 8, -1);
+        rgb (cr, kAccent); rrect (cr, g.x + g.w - 68, g.y + 9, 16, 8, 2); cairo_fill (cr);
+        rgb (cr, kPrint, 0.9); text (cr, "NOTES", g.x + g.w - 46, g.y + 16, 8, -1);
+
+        const char* msg = nullptr;
+        if (pos < 0.0)            msg = "This host gives no song position, so Notes can't follow the song here.";
+        else if (notes.n > 0)     msg = nullptr;
+        else if (scanLen == 0)    msg = "Play the song once so VoxBrew can learn your melody.";
+        else                      msg = "Press SUGGEST for harmony notes, or double-click to add one.";
+        if (msg != nullptr)
+        {
+            cairo_text_extents_t e; cairo_set_font_size (cr, 12); cairo_text_extents (cr, msg, &e);
+            const double cx = g.x + g.w / 2, cy = g.y + g.h / 2;
+            cairo_set_source_rgba (cr, 0.02, 0.03, 0.05, 0.8); rrect (cr, cx - e.width / 2 - 14, cy - 16, e.width + 28, 30, 6); cairo_fill (cr);
+            rgb (cr, kText); text (cr, msg, cx, cy + 4, 12, 0);
+        }
+        else
+        {
+            rgb (cr, kDim, 0.85);
+            text (cr, "drag: move   edges: length   double-click: add or delete   scroll: step", g.x + 48, g.y + 16, 8, -1);
+        }
+        cairo_restore (cr);
     }
 
     void drawMenu (cairo_t* cr)

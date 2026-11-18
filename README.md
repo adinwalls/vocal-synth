@@ -33,7 +33,7 @@ voice in ──► pitch tracker (YIN, shared) ──► pitch marks
 
 Same family look as TuneBrew and LevelBrew.
 
-* **Top row:** scale menu and the harmony source buttons (Auto, MIDI, Auto + MIDI).
+* **Top row:** scale menu and the harmony source buttons: Auto, MIDI, Both (auto and MIDI together) and Notes.
 * **Key buttons:** click to set the key. Green lamp = home note, yellow = in the scale, red = the note you're singing.
 * **Display:** the last 6 seconds. Amber is your voice, white the tuned lead, teal the auto voices, green the tonic, pink the MIDI voices.
 * **Auto voices panel:** click a lamp to turn voices on or off, use the arrows (or scroll) to change each voice's interval. The note each voice is singing shows on the right.
@@ -43,7 +43,7 @@ Same family look as TuneBrew and LevelBrew.
 
 | Control | What it does |
 |---|---|
-| Harmony Source | **Auto**: harmonies in key follow your voice. **MIDI**: voices play the notes you hold. **Auto + MIDI**: both. |
+| Harmony Source | **Auto**: harmonies in key follow your voice. **MIDI**: voices play the notes you hold. **Both**: auto and MIDI together. **Notes**: voices play the notes written on the plugin's own timeline (see Suggested notes). |
 | Key, Scale | The key the lead snaps to and the auto voices move in. |
 | Auto Voices, Auto Voice 1–4 | How many auto voices, and each one's distance in scale steps: +2 = 3rd up, +4 = 5th up, -3 = 4th down, -7 = octave down. |
 | Tonic Drone, Tonic Octave | A voice holding the key's root (octave 2 = A2 in A). |
@@ -55,6 +55,26 @@ Same family look as TuneBrew and LevelBrew.
 | Glide, Attack, Release | Note movement and how voices fade in and out. |
 | Consonants | How much of your s, t and breath sounds the harmony voices copy. |
 | Low Latency | For monitoring while you sing (see Latency above). |
+
+## Suggested notes (no keyboard needed)
+
+If playing harmonies on a keyboard or drawing them in a piano roll isn't your thing, let VoxBrew write them for you and then nudge what you don't like.
+
+![Notes view](docs/voxbrew-notes.png)
+
+1. Press **NOTES** (top right).
+2. **Play the song once.** VoxBrew learns your melody as it goes and draws it in amber.
+3. Choose the voices you want in the panel on the right (say a 3rd up and a 5th up) and press **SUGGEST**. A block appears for every harmony note, in key, lined up with what you sang.
+4. Edit only what you want to change:
+   * drag a block up or down to change its note (it snaps to the key; hold Shift for any semitone)
+   * drag a block sideways to move it, or drag its ends to make it longer or shorter
+   * double-click empty space to add a note, double-click a block to delete it
+   * scroll over a block to step it through the scale; scroll or drag empty space to move along the song
+5. Play again. The blocks now sing in time with the song, in your voice.
+
+Pressing SUGGEST again replaces the blocks (it asks first). The notes and the learned melody are saved with your Mixbus session. Presets never touch them.
+
+This needs the host to tell the plugin where the song is, which the LV2 and VST3 versions get. The CLAP version doesn't, so use LV2 or VST3 for Notes.
 
 ## Presets
 
@@ -93,7 +113,7 @@ No DAW needed:
 
 ```bash
 make test                                   # pitch accuracy, release, formants, CPU, low latency
-make snapshot                               # draws the editor to docs/voxbrew.png
+make snapshot                               # draws the editor to docs/voxbrew.png and docs/voxbrew-notes.png
 make render
 ./build/voxbrew_render take.wav out.wav --key A --scale major --auto 2,4 --tonic 2
 ./build/voxbrew_render take.wav out.wav --mode midi --notes 57,61,64,69 --lead 0
@@ -106,7 +126,8 @@ make render
   * `PitchTracker` — YIN on a ~16 kHz decimated copy.
   * `VoiceAnalyzer` — input history and pitch marks shared by all voices.
   * `PsolaVoice` — one voice: TD-PSOLA, glide, detune, envelope.
-  * `Harmonizer` — voice slots (lead, auto, tonic, MIDI), MIDI handling, mix.
+  * `Harmonizer` — voice slots (lead, auto, tonic, MIDI), MIDI handling, written-note playback, mix.
+  * `NoteTrack` — the melody scan, the written notes and the suggestion rule.
 * `src/VoxParams.h` — the parameter list shared by plugin and editor.
 * `src/VoxPresets.h` — the factory presets.
 * `src/VoxView.h` — the editor, drawn with Cairo in the Adin Brew style (hardware primitives from TuneBrew).

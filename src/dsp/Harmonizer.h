@@ -1,5 +1,6 @@
 #pragma once
 
+#include "NoteTrack.h"
 #include "PsolaVoice.h"
 #include "VoiceAnalyzer.h"
 
@@ -11,7 +12,9 @@
 namespace voxbrew
 {
 
-enum HarmonyMode { kModeAuto = 0, kModeMidi, kModeAutoAndMidi, kModeCount };
+// Notes: harmonies come from the notes written on the plugin's own timeline
+// (the suggested-notes editor) and play back in time with the song.
+enum HarmonyMode { kModeAuto = 0, kModeMidi, kModeAutoAndMidi, kModeNotes, kModeCount };
 
 struct HarmonizerParams
 {
@@ -71,6 +74,26 @@ public:
     void setSustain (bool down);
     void allNotesOff();
 
+    // ---- song timeline (suggested notes) ----
+    // Audio thread, before each process(): where this block sits in the song.
+    // `known` is false when the host gives no position.
+    void setTimeline (bool known, bool playing, double seconds);
+
+    // Your sung pitch along the song, learned while the song plays.
+    MelodyScan scan;
+
+    // Any thread except the audio thread.
+    void setNotes (const NoteSet& ns)
+    {
+        const int next = 1 - noteIdx.load();
+        noteBuf[next] = ns;
+        noteIdx.store (next);
+    }
+    const NoteSet& notes() const { return noteBuf[noteIdx.load()]; }
+
+    std::atomic<double> meterPos { -1.0 };   // song position in seconds, -1 if the host gives none
+    std::atomic<bool> meterPlaying { false };
+
     // Mono in, stereo out. `n` can be any size.
     void process (const float* in, float* outL, float* outR, int n);
 
@@ -85,8 +108,11 @@ public:
 private:
     void processChunk (const float* in, float* outL, float* outR, int n);
     void updateFixedVoices (int64_t outputStart);
+    void updateWrittenNotes (double seconds);
+    void startMidiVoice (int note, float velocity);
+    void releaseMidiVoice (int note);
     bool midiEnabled() const { return params.mode != kModeAuto; }
-    bool autoEnabled() const { return params.mode != kModeMidi; }
+    bool autoEnabled() const { return params.mode == kModeAuto || params.mode == kModeAutoAndMidi; }
 
     HarmonizerParams params;
     VoiceAnalyzer analyzer;
@@ -96,6 +122,13 @@ private:
     std::array<bool, kNumVoices> sustained {};
     bool sustain = false;
     uint64_t orderCounter = 0;
+
+    NoteSet noteBuf[2];
+    std::atomic<int> noteIdx { 0 };
+    std::array<bool, 128> written {};   // notes currently held by the written-note track
+    bool anyWritten = false;
+    bool tlValid = false;
+    double tlSeconds = 0.0, fs = 48000.0;
 
     int latency = 0, fullLatency = 0, shortLatency = 0;
     bool lowLatency = false;

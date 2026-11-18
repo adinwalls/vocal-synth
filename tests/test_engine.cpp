@@ -265,6 +265,93 @@ int main()
         check (sounds, "every preset produces sound without clipping on a -12 dB voice");
     }
 
+    // 12. Suggested notes: play a three-note melody along the timeline, then ask for a third above.
+    {
+        std::vector<float> in (48000, 0.0f);           // song starts with a second of silence
+        const int melody[3] = { 57, 59, 61 };          // A3 B3 C#4, slightly out of tune, with gaps
+        for (int m : melody)
+        {
+            const auto v = test::synthVowel (fs, 0.6, midiToHz (m) * 1.008, 20.0);
+            in.insert (in.end(), v.begin(), v.end());
+            in.insert (in.end(), 9600, 0.0f);
+        }
+        Harmonizer h;
+        h.prepare (fs);
+        h.setParams (only (1.0f, 0.0f));
+        std::vector<float> l (512), r (512);
+        for (size_t i = 0; i + 512 <= in.size(); i += 512)
+        {
+            h.setTimeline (true, true, (double) i / fs);
+            h.process (in.data() + i, l.data(), r.data(), 512);
+        }
+        const int steps[1] = { 2 };
+        NoteSet ns;
+        suggestNotes (h.scan, { 9, scaleMask (kMajor) }, steps, 1, ns);
+        const int expect[3] = { 61, 62, 64 };          // C#4 D4 E4
+        bool ok = ns.n == 3;
+        for (int i = 0; i < ns.n; ++i)
+        {
+            char nb[16]; noteName (ns.r[i].note, nb, sizeof nb);
+            std::printf ("      suggested %-4s %.2f - %.2f s\n", nb, ns.r[i].start, ns.r[i].end);
+            const double start = 1.0 + i * 0.8;
+            ok = ok && i < 3 && ns.r[i].note == expect[i]
+                 && std::abs (ns.r[i].start - start) < 0.06 && std::abs (ns.r[i].end - (start + 0.6)) < 0.06;
+        }
+        check (ok, "a sung A3 B3 C#4 gets suggested thirds C#4 D4 E4 at the right times");
+
+        // text round trip, as saved in the session
+        NoteSet back; back.decode (ns.encode().c_str());
+        bool same = back.n == ns.n;
+        for (int i = 0; same && i < ns.n; ++i)
+            same = back.r[i].note == ns.r[i].note && std::abs (back.r[i].start - ns.r[i].start) < 0.001
+                   && std::abs (back.r[i].end - ns.r[i].end) < 0.001;
+        MelodyScan scan2;
+        const bool scanOk = scan2.decode (h.scan.encode().c_str()) && scan2.len.load() == h.scan.len.load()
+                            && scan2.at (130) == h.scan.at (130);
+        check (same && scanOk, "notes and the melody scan survive saving and loading");
+    }
+
+    // 13. Written notes play in time: E4 from 0.5 to 1.0 s over a held A3, silent before and after.
+    {
+        const auto in = test::synthVowel (fs, 2.0, 220.0);
+        auto p = only (0.0f, 1.0f);
+        p.mode = kModeNotes;
+        p.voice.releaseMs = 30.0f;
+        Harmonizer h;
+        h.prepare (fs);
+        h.setParams (p);
+        NoteSet ns; ns.add (0.5, 1.0, 64);
+        h.setNotes (ns);
+        std::vector<float> l (in.size(), 0.0f), r (in.size(), 0.0f);
+        for (size_t i = 0; i + 256 <= in.size(); i += 256)
+        {
+            h.setTimeline (true, true, (double) i / fs);
+            h.process (in.data() + i, l.data() + i, r.data() + i, 256);
+        }
+        // undo the plugin's latency, as the host does
+        const size_t lat = (size_t) h.getLatencySamples();
+        std::vector<float> out (l.begin() + (long) lat, l.end());
+        auto rms = [&] (double from, double to)
+        {
+            double e = 0.0; size_t n = 0;
+            for (size_t i = (size_t) (from * fs); i < (size_t) (to * fs) && i < out.size(); ++i, ++n) e += out[i] * out[i];
+            return std::sqrt (e / std::max<size_t> (1, n));
+        };
+        const double hz = test::medianPitch (out, fs, 0.6, 0.95);
+        const double before = rms (0.1, 0.45), during = rms (0.6, 0.95), after = rms (1.3, 1.8);
+        std::printf ("      written E4: %.1f c, level before %.4f during %.4f after %.4f\n",
+                     cents (hz, midiToHz (64)), before, during, after);
+        check (std::abs (cents (hz, midiToHz (64))) < 8.0 && before < during * 0.02 && after < during * 0.02,
+               "a written note sounds on pitch between its start and end only");
+
+        // stopping the transport lets go of the note
+        h.setTimeline (true, true, 0.7);
+        h.process (in.data(), l.data(), r.data(), 4800);
+        h.setTimeline (true, false, 0.8);
+        h.process (in.data(), l.data(), r.data(), 48000);
+        check (h.activeVoices() == 0, "written notes stop when the song stops");
+    }
+
     Harmonizer h;
     h.prepare (fs);
     std::printf ("\nReported latency at 48 kHz: %d samples (%.1f ms)", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);
