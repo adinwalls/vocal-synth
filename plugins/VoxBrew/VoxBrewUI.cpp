@@ -28,6 +28,15 @@ protected:
         view.setValue ((int) index, value);
     }
 
+    void programLoaded (uint32_t index) override
+    {
+        // a preset sets every control except Key and Low Latency
+        float v[voxbrew::pCount];
+        for (int i = 0; i < voxbrew::pCount; ++i) v[i] = view.getValue (i);
+        voxbrew::applyPreset ((int) index, v);
+        for (int i = 0; i < voxbrew::pCount; ++i) view.setValue (i, v[i]);
+    }
+
     void uiIdle() override
     {
         // redraw only when something on screen actually changed

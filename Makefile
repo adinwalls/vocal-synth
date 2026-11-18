@@ -13,9 +13,10 @@ dpf/utils/lv2_ttl_generator:
 
 gen: plugins dpf/utils/lv2_ttl_generator
 	@./dpf/utils/generate-ttl.sh bin
+	@./tools/fix_presets.sh bin/VoxBrew.lv2/presets.ttl
 
 # Offline engine tests and the render tool (no DPF needed)
-build/test_engine: tests/test_engine.cpp $(DSP) src/dsp/*.h tools/*.h
+build/test_engine: tests/test_engine.cpp $(DSP) src/*.h src/dsp/*.h tools/*.h
 	@mkdir -p build
 	$(CXX) $(CXXFLAGS_TOOLS) -o $@ tests/test_engine.cpp $(DSP)
 

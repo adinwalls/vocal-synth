@@ -46,6 +46,8 @@ public:
     void setEngine (const Harmonizer* e) { eng = e; dirty = true; }
     void setValue (int i, float v) { if (i >= 0 && i < pCount && values[i] != v) { values[i] = v; if (kSpecs[i].kind != kOutput) dirty = true; } }
 
+    float getValue (int i) const { return i >= 0 && i < pCount ? values[i] : 0.0f; }
+
     // Call regularly with a running clock in seconds; true means "repaint".
     bool tick (double now)
     {

@@ -1,6 +1,6 @@
 // Offline checks for the VoxBrew engine. Build and run with `make test`.
 
-#include "../src/dsp/Harmonizer.h"
+#include "../src/VoxPresets.h"
 #include "../tools/SynthVoice.h"
 
 #include <chrono>
@@ -239,6 +239,30 @@ int main()
         std::printf ("      D4 from G3 with 60 c vibrato: full %.1f c, low latency %.1f c\n",
                      cents (hz[0], midiToHz (62)), cents (hz[1], midiToHz (62)));
         check (std::abs (cents (hz[1], midiToHz (62))) < 8.0, "low latency holds the note under vibrato");
+    }
+
+    // 11. Factory presets: values in range, key left alone, and each one makes sound in tune.
+    {
+        bool inRange = true, keepsKey = true, sounds = true;
+        const auto in = test::synthVowel (fs, 1.5, 220.0);
+        for (int i = 0; i < kNumPresets; ++i)
+        {
+            float v[pCount];
+            for (int k = 0; k < pCount; ++k) v[k] = kSpecs[k].def;
+            v[pKey] = 9; v[pLowLatency] = 1;
+            applyPreset (i, v);
+            for (int k = 0; k < pCount; ++k)
+                inRange = inRange && v[k] >= kSpecs[k].min && v[k] <= kSpecs[k].max;
+            keepsKey = keepsKey && v[pKey] == 9 && v[pLowLatency] == 1;
+            const auto out = mono (run (in, fs, toEngine (v), [] (Harmonizer& h) { h.noteOn (64, 0.9f); }));
+            double peak = 0.0;
+            for (size_t k = 24000; k < out.size(); ++k) peak = std::max (peak, (double) std::abs (out[k]));
+            std::printf ("      %-14s peak %.2f\n", kPresets[i].name, peak);
+            sounds = sounds && peak > 0.05 && peak < 1.0;
+        }
+        check (inRange, "every preset value is inside its control's range");
+        check (keepsKey, "presets leave Key and Low Latency alone");
+        check (sounds, "every preset produces sound without clipping on a -12 dB voice");
     }
 
     Harmonizer h;

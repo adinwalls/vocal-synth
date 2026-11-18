@@ -4,7 +4,7 @@
 #pragma once
 
 #include "DistrhoPlugin.hpp"
-#include "../../src/VoxParams.h"
+#include "../../src/VoxPresets.h"
 
 START_NAMESPACE_DISTRHO
 
@@ -13,7 +13,7 @@ using namespace voxbrew;
 class VoxBrewPlugin : public Plugin
 {
 public:
-    VoxBrewPlugin() : Plugin (pCount, 0, 0)
+    VoxBrewPlugin() : Plugin (pCount, kNumPresets, 0)
     {
         for (int i = 0; i < pCount; ++i)
             values[i] = kSpecs[i].def;
@@ -35,7 +35,7 @@ protected:
     const char* getMaker() const override { return "Adin Walls"; }
     const char* getLicense() const override { return "GPL-3.0-or-later"; }
     const char* getHomePage() const override { return "https://github.com/adinwalls/vocal-synth"; }
-    uint32_t getVersion() const override { return d_version (0, 2, 0); }
+    uint32_t getVersion() const override { return d_version (0, 3, 0); }
 
     void initAudioPort (bool input, uint32_t index, AudioPort& port) override
     {
@@ -79,6 +79,17 @@ protected:
                 break;
             }
         }
+    }
+
+    void initProgramName (uint32_t index, String& name) override
+    {
+        name = kPresets[index].name;
+    }
+
+    void loadProgram (uint32_t index) override
+    {
+        applyPreset ((int) index, values);
+        apply();
     }
 
     float getParameterValue (uint32_t index) const override
