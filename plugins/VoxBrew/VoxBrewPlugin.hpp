@@ -37,7 +37,7 @@ protected:
     const char* getMaker() const override { return "Adin Walls"; }
     const char* getLicense() const override { return "GPL-3.0-or-later"; }
     const char* getHomePage() const override { return "https://github.com/adinwalls/vocal-synth"; }
-    uint32_t getVersion() const override { return d_version (0, 6, 0); }
+    uint32_t getVersion() const override { return d_version (0, 7, 0); }
 
     void initAudioPort (bool input, uint32_t index, AudioPort& port) override
     {
