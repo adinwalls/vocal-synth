@@ -69,7 +69,7 @@ protected:
         view.draw (context.handle, getWidth(), getHeight());
     }
 
-    // mouse positions arrive in window pixels; the view works in its own 912 x 700 space
+    // mouse positions arrive in window pixels; the view works in its own 912 x 540 space
     double zoom() const { return std::min (getWidth() / voxbrew::VoxView::kW, getHeight() / voxbrew::VoxView::kH); }
     double sx (double x) const { return x / zoom(); }
     double sy (double y) const { return y / zoom(); }
