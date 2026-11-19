@@ -39,6 +39,7 @@ Same family look as TuneBrew and LevelBrew.
 * **Display:** the last 6 seconds. Amber is your voice, white the tuned lead, teal the auto voices, green the tonic, pink the MIDI voices.
 * **Auto voices panel:** click a lamp to turn voices on or off, use the arrows (or scroll) to change each voice's interval. The note each voice is singing shows on the right.
 * **Mangle row:** the big Amount knob takes the sound from clean to wrecked; the five small knobs choose what kind of damage. The little screen draws a clean wave and what your settings do to it.
+* **Eject key** (under Formant): slides the tape deck out over the display; press it again to put it away. Its little lamp shows when the echo is on, even with the deck hidden.
 * **Knobs:** drag up and down, hold Shift for fine moves, double-click for the default, or scroll.
 
 ## Controls
@@ -63,6 +64,21 @@ Same family look as TuneBrew and LevelBrew.
 | Crush | Fuzz at first, then the crunchy, gritty sound of an old sampler or a bad phone line. |
 | Hiss | Tape hiss. It sits quietly in the gaps and swells when you sing. |
 | Crackle | Ticks and pops like an old record, more of them while you sing. |
+
+## The tape deck
+
+![Tape deck](docs/voxbrew-tape.png)
+
+Press the eject key under the Formant knob and a brushed-metal tape deck slides up out of the panel. It is a tape echo that comes after everything else, Mangle included. It does nothing while Echo is at 0.
+
+| Knob | What it does |
+|---|---|
+| Echo | How loud the repeats are. 0 = off. |
+| Age | A worn tape: each repeat gets darker, wobblier and more squashed. |
+| Time | The gap between repeats, 60 to 1200 ms. Turning it bends the pitch, like changing the tape speed. |
+| Repeats | How many times the echo comes round. |
+
+The reels turn while the echo is on, faster for shorter times.
 
 ## Suggested notes (no keyboard needed)
 

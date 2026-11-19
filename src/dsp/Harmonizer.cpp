@@ -11,6 +11,7 @@ void Harmonizer::prepare (double sampleRate, float minF0, float maxF0)
     fs = sampleRate;
     analyzer.prepare (sampleRate, minF0, maxF0);
     mangler.prepare (sampleRate);
+    echo.prepare (sampleRate);
     // The newest usable pitch mark trails the input by up to ~2.35 periods and a
     // grain reaches one period ahead of its centre. 2.5 periods keeps latency
     // down; when the lowest notes run ahead, the voice reuses the newest mark.
@@ -38,6 +39,7 @@ void Harmonizer::reset()
 {
     analyzer.reset();
     mangler.reset();
+    echo.reset();
     for (auto& v : voices)
         v.kill();
     midiNote.fill (-1);
@@ -303,6 +305,8 @@ void Harmonizer::processChunk (const float* in, float* outL, float* outR, int n)
 
     mangler.process (outL, outR, n, mangle * std::clamp (mg.crush, 0.0f, 1.0f),
                      mangle * std::clamp (mg.hiss, 0.0f, 1.0f), mangle * std::clamp (mg.crackle, 0.0f, 1.0f));
+
+    echo.process (outL, outR, n, params.echo);
 
     for (int i = 0; i < n; ++i)
     {

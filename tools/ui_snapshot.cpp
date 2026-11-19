@@ -76,6 +76,13 @@ int main (int argc, char** argv)
         engine.setTimeline (true, false, 4.2);
         view.tick (t + 1.0);
     }
+    if (what == "tape")
+    {
+        view.setValue (pEcho, 45); view.setValue (pEchoRepeats, 55);
+        view.setDeck (true, true);
+        view.tick (t + 0.4);
+    }
+    if (what == "half") { view.setValue (pEcho, 45); view.setDeck (true, true); view.setDeck (false); view.tick (t + 0.01); view.tick (t + 0.11); }
     if (what == "menu") { view.mouseDown (300, 30, false, 0.0); view.mouseMove (330, 150, false); } // open the scale menu
     view.draw (cr, w, h);
     cairo_destroy (cr);

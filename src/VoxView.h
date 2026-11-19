@@ -50,12 +50,29 @@ public:
     // Notes written on the timeline (from the saved session, or the engine at start-up).
     void setNotes (const NoteSet& n) { if (gdrag == dNone) { notes = n; if (sel >= notes.n) sel = -1; dirty = true; } }
 
+    // The tape deck drawer (the eject key toggles it). `instant` skips the slide.
+    void setDeck (bool open, bool instant = false) { deckOpen = open; if (instant) deckPos = open ? 1.0 : 0.0; dirty = true; }
+
     float getValue (int i) const { return i >= 0 && i < pCount ? values[i] : 0.0f; }
 
     // Call regularly with a running clock in seconds; true means "repaint".
     bool tick (double now)
     {
+        const double dt = std::clamp (now - nowT, 0.0, 0.1);
         nowT = now;
+        const double want = deckOpen ? 1.0 : 0.0;
+        if (deckPos != want)
+        {
+            // the deck slides out over about a third of a second
+            deckPos = want > deckPos ? std::min (1.0, deckPos + dt / 0.38) : std::max (0.0, deckPos - dt / 0.30);
+            dirty = true;
+        }
+        if (deckPos > 0.0 && values[pEcho] > 0.5f)
+        {
+            // reels turn while the echo is on: quicker for shorter times
+            reel = std::fmod (reel + dt * 2.2 * std::sqrt (380.0 / values[pEchoTime]), 2.0 * M_PI * 30.0);
+            dirty = true;
+        }
         if (now - lastSample >= 1.0 / 30.0)
         {
             lastSample = now;
@@ -136,7 +153,9 @@ public:
         drawVoicePanel (cr);
         pushButton (cr, kLowLatBtn, "LOW LATENCY", values[pLowLatency] > 0.5f, kAmber, 9.5, 12);
         drawMangle (cr);
-        for (int k = 0; k < kNumKnobs; ++k) drawKnob (cr, k);
+        for (int k = 0; k < kDeckKnob0; ++k) drawKnob (cr, k);
+        drawEject (cr);
+        drawDeck (cr);
         if (menuOpen) drawMenu (cr);
         cairo_restore (cr);
     }
@@ -157,6 +176,13 @@ public:
         for (int m = 0; m < kModeCount; ++m)
             if (inRect (x, y, modeBtn (m))) { commit (pMode, (float) m); return true; }
         if (inRect (x, y, kLowLatBtn)) { commit (pLowLatency, values[pLowLatency] > 0.5f ? 0.f : 1.f); return true; }
+        if (inRect (x, y, { kEjectBtn.x - 4, kEjectBtn.y - 4, kEjectBtn.w + 8, kEjectBtn.h + 8 })) { deckOpen = ! deckOpen; return true; }
+        if (deckPos > 0.0 && inRect (x, y, kDeck))
+        {
+            // the deck covers the display: only its own knobs answer
+            pressKnob (knobAt (x, y), y, fine, timeSec);
+            return true;
+        }
 
         if (notesMode())
         {
@@ -197,22 +223,23 @@ public:
             if (dir != 0) { nudgeRow (r, dir); return true; }
         }
 
-        const int k = knobAt (x, y);
-        if (k >= 0)
+        return pressKnob (knobAt (x, y), y, fine, timeSec);
+    }
+
+    bool pressKnob (int k, double y, bool fine, double timeSec)
+    {
+        if (k < 0) return false;
+        const int p = kKnobParams[k];
+        if (lastClickKnob == k && timeSec - lastClickTime < 0.35)   // double-click = default
         {
-            const int p = kKnobParams[k];
-            if (lastClickKnob == k && timeSec - lastClickTime < 0.35)   // double-click = default
-            {
-                commit (p, kSpecs[p].def);
-                lastClickKnob = -1;
-                return true;
-            }
-            lastClickKnob = k; lastClickTime = timeSec;
-            dragKnob = k; dragY = y; dragNorm = toNorm (p, values[p]); dragFine = fine;
-            host->beginEdit (p);
+            commit (p, kSpecs[p].def);
+            lastClickKnob = -1;
             return true;
         }
-        return false;
+        lastClickKnob = k; lastClickTime = timeSec;
+        dragKnob = k; dragY = y; dragNorm = toNorm (p, values[p]); dragFine = fine;
+        host->beginEdit (p);
+        return true;
     }
 
     bool mouseUp (double, double)
@@ -243,6 +270,16 @@ public:
         x -= kCheek;
         if (dy == 0.0) return false;
         dirty = true;
+        if (deckPos > 0.0 && inRect (x, y, kDeck))
+        {
+            const int k = knobAt (x, y);
+            if (k >= 0)
+            {
+                const int p = kKnobParams[k];
+                commit (p, fromNorm (p, std::clamp (toNorm (p, values[p]) + (dy > 0 ? 0.02 : -0.02), 0.0, 1.0)));
+            }
+            return true;
+        }
         if (inRect (x, y, kScaleBox))
         {
             const int s = (int) values[pScale] + (dy > 0 ? -1 : 1);
@@ -308,6 +345,8 @@ private:
     float values[pCount];
     double nowT = 0, lastSample = -1, lastActive = -100, center = 0;
     bool dirty = true, menuOpen = false;
+    bool deckOpen = false;
+    double deckPos = 0.0, reel = 0.0;   // 0 = away, 1 = fully out
     int hoverKnob = -1, dragKnob = -1, hoverCell = -1, hoverMenu = -1;
     int lastClickKnob = -1;
     double lastClickTime = -1, dragY = 0, dragNorm = 0;
@@ -330,12 +369,16 @@ private:
     static constexpr double kViewLen = 10.0;   // seconds shown in the note editor
     static constexpr int kRows = 5;            // 4 auto voices + tonic
     static constexpr double kRowTop = 150, kRowH = 33;
-    static constexpr int kNumKnobs = 18;
+    static constexpr Rect kDeck = { 12, 118, 836, 258 };       // the tape deck, when it is out
+    static constexpr Rect kEjectBtn = { 46, 514, 34, 16 };
+    static constexpr int kNumKnobs = 22;
+    static constexpr int kDeckKnob0 = 18;      // knobs 18.. sit on the tape deck
     static constexpr int kMixKnobs = 12;       // knobs 12.. belong to the Mangle module
     static constexpr int kVoiceKnobs = 7;
     static constexpr int kKnobParams[kNumKnobs] = { pFormant, pNatural, pLoose, pGlide, pAttack, pRelease, pConsonants,
                                                     pDry, pLead, pHarmony, pSpread, pOutput,
-                                                    pMangle, pScatter, pWobble, pCrush, pHiss, pCrackle };
+                                                    pMangle, pScatter, pWobble, pCrush, pHiss, pCrackle,
+                                                    pEcho, pEchoAge, pEchoTime, pEchoRepeats };
     static constexpr double kKnobY = 452, kKnobR = 18;
     static constexpr double kWindow = 6.0;   // seconds shown in the graph
     static constexpr double kSpan = 26.0;    // semitones shown in the graph
@@ -354,14 +397,17 @@ private:
     {
         if (k < kVoiceKnobs) return 44 + k * 68.0;
         if (k < kMixKnobs) return kSeamX + 44 + (k - kVoiceKnobs) * 68.0;
-        return k == kMixKnobs ? 66.0 : 160 + (k - kMixKnobs - 1) * 66.0;
+        if (k < kDeckKnob0) return k == kMixKnobs ? 66.0 : 160 + (k - kMixKnobs - 1) * 66.0;
+        static const double dx[4] = { 76, 164, kDeck.w - 164, kDeck.w - 76 };
+        return kDeck.x + dx[k - kDeckKnob0];
     }
     // the Mangle amount knob is the big one
-    static double knobR (int k) { return k == kMixKnobs ? 24.0 : kKnobR; }
-    static double knobY (int k) { return k < kMixKnobs ? kKnobY : kMod2Top + 90 - knobR (k); }
+    static double knobR (int k) { return k == kMixKnobs ? 24.0 : k >= kDeckKnob0 ? 21.0 : kKnobR; }
+    static double knobY (int k) { return k < kMixKnobs ? kKnobY : k >= kDeckKnob0 ? kDeck.y + 112 : kMod2Top + 90 - knobR (k); }
     int knobAt (double x, double y) const
     {
-        for (int k = 0; k < kNumKnobs; ++k)
+        const int count = deckPos > 0.98 ? kNumKnobs : kDeckKnob0;   // deck knobs only once it is out
+        for (int k = 0; k < count; ++k)
             if (std::hypot (x - knobX (k), y - knobY (k)) <= knobR (k) + 9) return k;
         return -1;
     }
@@ -588,6 +634,7 @@ private:
         switch (p)
         {
             case pGlide: case pAttack: case pRelease: return 3.0;
+            case pEchoTime:                           return 2.0;
             case pDry: case pLead: case pHarmony:     return 0.45;
             default:                                  return 1.0;
         }
@@ -611,7 +658,7 @@ private:
         const float v = values[p];
         switch (p)
         {
-            case pMangle:
+            case pMangle: case pEcho:
                 if (v < 0.5f) std::snprintf (buf, n, "off");
                 else std::snprintf (buf, n, "%.0f%%", v);
                 break;
@@ -622,7 +669,7 @@ private:
             case pOutput:  std::snprintf (buf, n, "%+.1f dB", v); break;
             case pFormant: std::snprintf (buf, n, "%+.1f st", v); break;
             case pLoose:   std::snprintf (buf, n, "%.0f ct", v); break;
-            case pGlide: case pAttack: case pRelease: std::snprintf (buf, n, "%.0f ms", v); break;
+            case pGlide: case pAttack: case pRelease: case pEchoTime: std::snprintf (buf, n, "%.0f ms", v); break;
             default:       std::snprintf (buf, n, "%.0f%%", v); break;
         }
     }
@@ -641,6 +688,8 @@ private:
             case pMangle: return "AMOUNT";     case pScatter: return "SCATTER";
             case pWobble: return "WOBBLE";     case pCrush: return "CRUSH";
             case pHiss: return "HISS";         case pCrackle: return "CRACKLE";
+            case pEcho: return "ECHO";         case pEchoAge: return "AGE";
+            case pEchoTime: return "TIME";     case pEchoRepeats: return "REPEATS";
         }
         return "";
     }
@@ -667,6 +716,10 @@ private:
             case pCrush:      return kCapBlack;
             case pHiss:       return kCapGrey;
             case pCrackle:    return kCapGrey;
+            case pEcho:       return kCapPink;
+            case pEchoAge:    return kCapBlack;
+            case pEchoTime:   return kCapBlue;
+            case pEchoRepeats: return kCapGreen;
         }
         return kCapGrey;
     }
@@ -1352,6 +1405,169 @@ private:
         }
     }
 
+
+    // ---------------- the tape deck ----------------
+    // An eject key, cassette-player style, under the Formant knob.
+    void drawEject (cairo_t* cr)
+    {
+        const Rect b = kEjectBtn;
+        const double dn = deckOpen ? 1.0 : 0.0;   // the key stays down while the deck is out
+        cairo_set_source_rgb (cr, 0.03, 0.04, 0.06); rrect (cr, b.x - 2.5, b.y - 2.5, b.w + 5, b.h + 5, 4); cairo_fill (cr);
+        cairo_pattern_t* g = cairo_pattern_create_linear (0, b.y, 0, b.y + b.h);
+        cairo_pattern_add_color_stop_rgb (g, 0.0, 0.93 - 0.20 * dn, 0.94 - 0.20 * dn, 0.95 - 0.20 * dn);
+        cairo_pattern_add_color_stop_rgb (g, 0.5, 0.74 - 0.12 * dn, 0.76 - 0.12 * dn, 0.78 - 0.12 * dn);
+        cairo_pattern_add_color_stop_rgb (g, 1.0, 0.52, 0.54, 0.57);
+        cairo_set_source (cr, g); rrect (cr, b.x, b.y + dn, b.w, b.h - dn, 2.5); cairo_fill (cr); cairo_pattern_destroy (g);
+        cairo_set_source_rgba (cr, 1, 1, 1, 0.75 - 0.5 * dn); cairo_set_line_width (cr, 1);
+        cairo_move_to (cr, b.x + 2.5, b.y + 1.2 + dn); cairo_line_to (cr, b.x + b.w - 2.5, b.y + 1.2 + dn); cairo_stroke (cr);
+        // the eject sign: a triangle over a bar
+        const double cx = b.x + b.w / 2, cy = b.y + b.h / 2 + dn * 0.6;
+        cairo_set_source_rgb (cr, 0.10, 0.12, 0.16);
+        cairo_move_to (cr, cx, cy - 5); cairo_line_to (cr, cx + 6.5, cy + 0.8); cairo_line_to (cr, cx - 6.5, cy + 0.8); cairo_close_path (cr); cairo_fill (cr);
+        cairo_rectangle (cr, cx - 6.5, cy + 2.4, 13, 2.2); cairo_fill (cr);
+        led (cr, b.x + b.w + 11, b.y + b.h / 2, 3.0, kAmber, values[pEcho] > 0.5f ? 1.0 : 0.0);   // echo is on
+    }
+
+    static void brushed (cairo_t* cr, Rect r, double rad, double light)
+    {
+        cairo_save (cr);
+        rrect (cr, r.x, r.y, r.w, r.h, rad); cairo_clip (cr);
+        cairo_pattern_t* g = cairo_pattern_create_linear (0, r.y, 0, r.y + r.h);
+        cairo_pattern_add_color_stop_rgb (g, 0.00, 0.90 * light, 0.91 * light, 0.93 * light);
+        cairo_pattern_add_color_stop_rgb (g, 0.45, 0.78 * light, 0.80 * light, 0.83 * light);
+        cairo_pattern_add_color_stop_rgb (g, 1.00, 0.63 * light, 0.65 * light, 0.69 * light);
+        cairo_set_source (cr, g); cairo_paint (cr); cairo_pattern_destroy (g);
+        cairo_set_line_width (cr, 1);
+        for (int i = 0; i < (int) r.h; ++i)          // the brushing: fine streaks along the plate
+        {
+            const double a = pic (i, 21);
+            if (a < 0.5) cairo_set_source_rgba (cr, 1, 1, 1, 0.16 * a); else cairo_set_source_rgba (cr, 0, 0, 0, 0.10 * (a - 0.5));
+            const double x0 = r.x + pic (i, 22) * r.w * 0.3, x1 = r.x + r.w - pic (i, 23) * r.w * 0.3;
+            cairo_move_to (cr, x0, r.y + i + 0.5); cairo_line_to (cr, x1, r.y + i + 0.5); cairo_stroke (cr);
+        }
+        cairo_restore (cr);
+        cairo_set_source_rgba (cr, 1, 1, 1, 0.7); cairo_set_line_width (cr, 1);
+        cairo_move_to (cr, r.x + rad, r.y + 0.5); cairo_line_to (cr, r.x + r.w - rad, r.y + 0.5); cairo_stroke (cr);
+        cairo_set_source_rgba (cr, 0, 0, 0, 0.35); rrect (cr, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, rad); cairo_stroke (cr);
+    }
+
+    static void engraved (cairo_t* cr, const char* s, double x, double y, double size, int align)
+    {
+        cairo_set_source_rgba (cr, 1, 1, 1, 0.65); text (cr, s, x, y + 1, size, align);
+        cairo_set_source_rgb (cr, 0.13, 0.17, 0.24); text (cr, s, x, y, size, align);
+    }
+
+    void drawReel (cairo_t* cr, double cx, double cy, double pack, double ang)
+    {
+        // the wound tape
+        cairo_pattern_t* g = cairo_pattern_create_radial (cx, cy, 16, cx, cy, pack);
+        cairo_pattern_add_color_stop_rgb (g, 0, 0.21, 0.13, 0.09);
+        cairo_pattern_add_color_stop_rgb (g, 1, 0.12, 0.075, 0.055);
+        cairo_set_source (cr, g); cairo_arc (cr, cx, cy, pack, 0, 2 * M_PI); cairo_fill (cr); cairo_pattern_destroy (g);
+        cairo_set_source_rgba (cr, 1, 1, 1, 0.07); cairo_set_line_width (cr, 1);
+        for (double rr = 22; rr < pack - 2; rr += 5) { cairo_arc (cr, cx, cy, rr, ang * 0.2, ang * 0.2 + 1.3); cairo_stroke (cr); }
+        // the white hub with its six teeth
+        cairo_set_source_rgb (cr, 0.94, 0.95, 0.93); cairo_arc (cr, cx, cy, 17, 0, 2 * M_PI); cairo_fill (cr);
+        cairo_set_source_rgba (cr, 0, 0, 0, 0.25); cairo_set_line_width (cr, 1); cairo_arc (cr, cx, cy, 16.5, 0, 2 * M_PI); cairo_stroke (cr);
+        cairo_set_source_rgb (cr, 0.05, 0.06, 0.09); cairo_arc (cr, cx, cy, 9.5, 0, 2 * M_PI); cairo_fill (cr);
+        cairo_set_source_rgb (cr, 0.94, 0.95, 0.93); cairo_set_line_width (cr, 3.2); cairo_set_line_cap (cr, CAIRO_LINE_CAP_BUTT);
+        for (int i = 0; i < 6; ++i)
+        {
+            const double a = ang + i * M_PI / 3;
+            cairo_move_to (cr, cx + std::cos (a) * 5.5, cy + std::sin (a) * 5.5);
+            cairo_line_to (cr, cx + std::cos (a) * 10.5, cy + std::sin (a) * 10.5);
+        }
+        cairo_stroke (cr);
+    }
+
+    // The deck itself: a brushed-metal unit that rises out of the slot above
+    // the knob rows and covers the display while it is out.
+    void drawDeck (cairo_t* cr)
+    {
+        if (deckPos <= 0.0) return;
+        const Rect d = kDeck;
+        const double e = 1.0 - std::pow (1.0 - deckPos, 3.0);
+        cairo_save (cr);
+        cairo_rectangle (cr, d.x - 4, d.y - 12, d.w + 8, d.h + 12); cairo_clip (cr);
+        cairo_translate (cr, 0, (1.0 - e) * (d.h + 12));
+
+        // shadow thrown on the panel above
+        cairo_pattern_t* sh = cairo_pattern_create_linear (0, d.y - 12, 0, d.y + 2);
+        cairo_pattern_add_color_stop_rgba (sh, 0, 0, 0, 0, 0); cairo_pattern_add_color_stop_rgba (sh, 1, 0, 0, 0, 0.55);
+        cairo_set_source (cr, sh); cairo_rectangle (cr, d.x, d.y - 12, d.w, 14); cairo_fill (cr); cairo_pattern_destroy (sh);
+
+        brushed (cr, d, 5, 1.0);
+        screw (cr, d.x + 13, d.y + 13, 0.5); screw (cr, d.x + d.w - 13, d.y + 13, 1.2);
+
+        // navy foot rail, like the faceplate
+        const Rect rail = { d.x + 1, d.y + d.h - 34, d.w - 2, 33 };
+        cairo_pattern_t* g = cairo_pattern_create_linear (0, rail.y, 0, rail.y + rail.h);
+        cairo_pattern_add_color_stop_rgb (g, 0, kNavyHi.r, kNavyHi.g, kNavyHi.b);
+        cairo_pattern_add_color_stop_rgb (g, 1, kNavyLo.r, kNavyLo.g, kNavyLo.b);
+        cairo_set_source (cr, g); cairo_rectangle (cr, rail.x, rail.y, rail.w, rail.h); cairo_fill (cr); cairo_pattern_destroy (g);
+        cairo_set_source_rgba (cr, 0, 0, 0, 0.5); cairo_rectangle (cr, rail.x, rail.y, rail.w, 1); cairo_fill (cr);
+        cairo_set_source_rgba (cr, 1, 1, 1, 0.12); cairo_rectangle (cr, rail.x, rail.y + 1, rail.w, 1); cairo_fill (cr);
+        screw (cr, d.x + 13, rail.y + 17, 0.9); screw (cr, d.x + d.w - 13, rail.y + 17, 0.1);
+        rgb (cr, kPrint); text (cr, "VB 4", d.x + 30, rail.y + 21, 9, -1); text (cr, "TAPE / ECHO", d.x + d.w - 30, rail.y + 21, 9, 1);
+        const bool on = values[pEcho] > 0.5f;
+        led (cr, d.x + d.w / 2 - 44, rail.y + 17, 3.6, kAmber, on ? 1.0 : 0.0);
+        rgb (cr, kText); text (cr, "TAPE ECHO", d.x + d.w / 2 + 6, rail.y + 21.5, 12, 0);
+
+        // the cassette bay: a dark well with a clear plastic lid
+        const Rect bay = { d.x + 240, d.y + 16, d.w - 480, 190 };
+        window (cr, bay, 8);
+        const Rect cs = { bay.x + 14, bay.y + 12, bay.w - 28, bay.h - 24 };
+        cairo_set_source_rgba (cr, 0.62, 0.80, 0.95, 0.10); rrect (cr, cs.x, cs.y, cs.w, cs.h, 7); cairo_fill (cr);
+        cairo_set_source_rgba (cr, 0.80, 0.92, 1.0, 0.45); cairo_set_line_width (cr, 1.2); rrect (cr, cs.x + .5, cs.y + .5, cs.w - 1, cs.h - 1, 7); cairo_stroke (cr);
+        // paper label
+        const Rect lb = { cs.x + 26, cs.y + 9, cs.w - 52, 20 };
+        cairo_set_source_rgb (cr, 0.93, 0.90, 0.80); rrect (cr, lb.x, lb.y, lb.w, lb.h, 2); cairo_fill (cr);
+        rgb (cr, kAmber); cairo_rectangle (cr, lb.x, lb.y + lb.h - 4, lb.w, 4); cairo_fill (cr);
+        cairo_select_font_face (cr, "Sans", CAIRO_FONT_SLANT_ITALIC, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_source_rgb (cr, 0.14, 0.18, 0.28); text (cr, "VoxBrew echo loop", lb.x + 8, lb.y + 12, 9, -1);
+        cairo_select_font_face (cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        char tb[24]; std::snprintf (tb, sizeof tb, "%.0f ms", values[pEchoTime]);
+        text (cr, tb, lb.x + lb.w - 8, lb.y + 12, 9, 1);
+
+        // reels: the more Repeats, the fuller the left one
+        const double ry = cs.y + 84, lx = cs.x + cs.w * 0.27, rx = cs.x + cs.w * 0.73;
+        const double fill = values[pEchoRepeats] / 95.0;
+        const double packL = 30 + 18 * fill, packR = 48 - 18 * fill;
+        drawReel (cr, lx, ry, packL, reel); drawReel (cr, rx, ry, packR, reel * 1.3 + 0.4);
+        // tape path past the head
+        const double ty = cs.y + cs.h - 14;
+        cairo_set_source_rgb (cr, 0.27, 0.17, 0.12); cairo_set_line_width (cr, 1.6);
+        cairo_move_to (cr, lx - packL, ry); cairo_line_to (cr, cs.x + 16, ty); cairo_line_to (cr, cs.x + cs.w - 16, ty); cairo_line_to (cr, rx + packR, ry); cairo_stroke (cr);
+        for (double gx : { cs.x + 16, cs.x + cs.w - 16 })
+        {
+            cairo_set_source_rgb (cr, 0.80, 0.82, 0.85); cairo_arc (cr, gx, ty, 4, 0, 2 * M_PI); cairo_fill (cr);
+            cairo_set_source_rgb (cr, 0.25, 0.27, 0.30); cairo_arc (cr, gx, ty, 1.3, 0, 2 * M_PI); cairo_fill (cr);
+        }
+        brushed (cr, { cs.x + cs.w / 2 - 20, ty - 9, 40, 16 }, 2, 0.95);          // the head
+        cairo_set_source_rgb (cr, 0.1, 0.1, 0.12); cairo_rectangle (cr, cs.x + cs.w / 2 - 0.6, ty - 6, 1.2, 10); cairo_fill (cr);
+        // gloss on the lid
+        cairo_pattern_t* gl = cairo_pattern_create_linear (cs.x, cs.y, cs.x + cs.w * 0.5, cs.y + cs.h);
+        cairo_pattern_add_color_stop_rgba (gl, 0.00, 1, 1, 1, 0.20); cairo_pattern_add_color_stop_rgba (gl, 0.35, 1, 1, 1, 0.05);
+        cairo_pattern_add_color_stop_rgba (gl, 0.36, 1, 1, 1, 0.00); cairo_pattern_add_color_stop_rgba (gl, 1.00, 1, 1, 1, 0.00);
+        cairo_set_source (cr, gl); rrect (cr, cs.x, cs.y, cs.w, cs.h, 7); cairo_fill (cr); cairo_pattern_destroy (gl);
+
+        // engraved panel lines round each pair of knobs
+        cairo_set_line_width (cr, 1);
+        for (double px : { d.x + 30.0, d.x + d.w - 210.0 })
+        {
+            cairo_set_source_rgba (cr, 0, 0, 0, 0.30); rrect (cr, px + .5, d.y + 28.5, 180, 178, 6); cairo_stroke (cr);
+            cairo_set_source_rgba (cr, 1, 1, 1, 0.55); rrect (cr, px + .5, d.y + 29.5, 180, 178, 6); cairo_stroke (cr);
+        }
+        engraved (cr, "LOOP", d.x + 120, d.y + 48, 9, 0);
+        engraved (cr, "MOTOR", d.x + d.w - 120, d.y + 48, 9, 0);
+
+        for (int k = kDeckKnob0; k < kNumKnobs; ++k) drawKnob (cr, k);
+        cairo_restore (cr);
+
+        // the slot it comes out of
+        cairo_set_source_rgba (cr, 0, 0, 0, 0.6 * std::min (1.0, deckPos * 4)); cairo_rectangle (cr, d.x - 4, d.y + d.h - 1.5, d.w + 8, 2.5); cairo_fill (cr);
+    }
+
     void drawKnob(cairo_t* cr, int k)
     {
         const int p = kKnobParams[k];
@@ -1361,11 +1577,13 @@ private:
         const double av = a0 + (a1 - a0) * n;
         const bool active = dragKnob == k || hoverKnob == k;
         const bool dim = false;
+        const bool metal = k >= kDeckKnob0;   // on the tape deck: dark printing on bright metal
         if (dim) cairo_push_group(cr);
         cairo_new_path(cr);
 
         // printed scale ticks
-        rgb(cr, kPrint, 0.85); cairo_set_line_width(cr, 1.2); cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
+        if (metal) cairo_set_source_rgba(cr, 0.13, 0.17, 0.24, 0.9); else rgb(cr, kPrint, 0.85);
+        cairo_set_line_width(cr, 1.2); cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
         for (int i = 0; i <= 10; ++i) {
             const double a = a0 + (a1 - a0) * i / 10.0;
             const double r0 = r + 4, r1 = r + ((i % 5 == 0) ? 9.5 : 7);
@@ -1410,8 +1628,17 @@ private:
 
         // value + label (silk-screen)
         char buf[32]; formatValue(p, buf, sizeof buf);
-        rgb(cr, active ? kAmber : kText); text(cr, buf, cx, cy + r + 26, 11, 0);
-        rgb(cr, kPrint); text(cr, knobLabel(p), cx, cy + r + 41, 9, 0);
+        if (metal)
+        {
+            if (active) cairo_set_source_rgb(cr, 0.62, 0.30, 0.02); else cairo_set_source_rgb(cr, 0.10, 0.13, 0.19);
+            text(cr, buf, cx, cy + r + 26, 11, 0);
+            engraved(cr, knobLabel(p), cx, cy + r + 41, 9, 0);
+        }
+        else
+        {
+            rgb(cr, active ? kAmber : kText); text(cr, buf, cx, cy + r + 26, 11, 0);
+            rgb(cr, kPrint); text(cr, knobLabel(p), cx, cy + r + 41, 9, 0);
+        }
         if (dim) { cairo_pop_group_to_source(cr); cairo_paint_with_alpha(cr, 0.33); }
     }
 

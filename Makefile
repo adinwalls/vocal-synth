@@ -37,6 +37,7 @@ build/ui_snapshot: tools/ui_snapshot.cpp $(DSP) src/*.h src/dsp/*.h tools/*.h
 snapshot: build/ui_snapshot
 	./build/ui_snapshot docs/voxbrew.png 1
 	./build/ui_snapshot docs/voxbrew-notes.png 1 notes
+	./build/ui_snapshot docs/voxbrew-tape.png 1 tape
 
 install: all
 	./install.sh
