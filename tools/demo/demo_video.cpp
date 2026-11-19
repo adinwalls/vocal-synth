@@ -8,7 +8,9 @@
 //
 // `key` is the major key of the vocal (C, C#, ... B; default A). Add the word
 // "synthetic" when the vocal is the stand-in from make_voice.py, so the captions say so.
-// "out=-3" sets the Output knob in dB; "measure" draws nothing and prints the peak level.
+// "out=-3" turns Dry, Lead and Harmony down by that many dB, so the mix has headroom
+// before it reaches Mangle and the echo (their saturation would otherwise be driven
+// harder than the knobs say); "measure" draws nothing and prints the peak level.
 // Raw BGRA frames go to stdout, the plugin's output goes to out.wav.
 // See tools/demo/make_demo.sh.
 
@@ -47,16 +49,18 @@ static std::vector<Scene> kScenes = {
         { pDry, 0 }, { pLead, -60 }, { pNatural, 10 }, { pSpread, 100 } }, false, -1, 0 },
     { "2. Tuned lead", "VoxBrew snaps the voice to the notes of the key",
       { { pDry, -60 }, { pLead, 0 } }, false, -1, 0 },
-    { "3. Harmony voices", "Two more voices follow the melody in key, a 3rd and a 5th above",
-      { { pAutoVoices, 2 }, { pAuto1, 2 }, { pAuto2, 4 }, { pHarmony, -3 } }, false, -1, 0 },
-    { "4. Full stack with a tonic drone", "Four voices plus a drone on the root note. Loose lets them drift like separate singers",
+    { "3. Harmony voices on their own", "Two new voices made from yours, a 3rd and a 5th above the melody, in key",
+      { { pLead, -60 }, { pAutoVoices, 2 }, { pAuto1, 2 }, { pAuto2, 4 }, { pHarmony, 0 } }, false, -1, 0 },
+    { "4. Lead and harmonies together", "The tuned lead in the middle, the harmony voices either side",
+      { { pLead, 0 }, { pHarmony, -2 } }, false, -1, 0 },
+    { "5. Full stack with a tonic drone", "Four voices plus a drone on the root note. Loose lets them drift like separate singers",
       { { pAutoVoices, 4 }, { pAuto3, -3 }, { pAuto4, -7 }, { pTonic, 1 }, { pTonicOctave, 2 },
-        { pLoose, 18 }, { pHarmony, -5 } }, false, -1, 0 },
-    { "5. MANGLE opens the Tape Mangler", "Wobble, hiss, crackle and crush, with a tape echo",
-      { { pMangle, 45 }, { pScatter, 25 }, { pWobble, 75 }, { pCrush, 30 }, { pHiss, 60 }, { pCrackle, 55 },
-        { pEcho, 38 }, { pEchoRepeats, 45 }, { pEchoAge, 50 } }, true, -1, 0 },
-    { "6. Just Mangle", "One slider pushes all of the damage from worn to wrecked",
-      {}, true, 85, 0 },
+        { pLoose, 18 }, { pHarmony, -4 } }, false, -1, 0 },
+    { "6. MANGLE opens the Tape Mangler", "Wobble, hiss, crackle and crush, with a tape echo",
+      { { pMangle, 45 }, { pScatter, 20 }, { pWobble, 70 }, { pCrush, 25 }, { pHiss, 35 }, { pCrackle, 20 },
+        { pEcho, 40 }, { pEchoRepeats, 45 }, { pEchoAge, 50 } }, true, -1, 0 },
+    { "7. Just Mangle", "One slider pushes all of the damage from worn to wrecked",
+      {}, true, 55, 0 },
     { "VoxBrew by Adin Walls", "Every sound here is the plugin's own engine at work on one raw vocal",
       {}, true, -1, 3.5 },
 };
@@ -101,7 +105,10 @@ int main (int argc, char** argv)
     }
     const std::string tuned = std::string ("VoxBrew snaps the voice to the key: ") + kKeyNames[key] + " major";
     kScenes[0].changes.push_back ({ pKey, (float) key });
-    kScenes[0].changes.push_back ({ pOutput, outDb });
+    for (Scene& sc : kScenes)
+        for (Change& c : sc.changes)
+            if ((c.param == pDry || c.param == pLead || c.param == pHarmony) && c.value > -59.0f)
+                c.value += outDb;
     kScenes[1].sub = tuned.c_str();
     if (synthetic)
     {

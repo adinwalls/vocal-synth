@@ -66,6 +66,7 @@ public:
 
 private:
     double targetMidi (const Mark& m, const VoiceSettings& s);
+    double steadySung (const Mark& m);
     void clearAhead();
 
     double fs = 48000.0;
@@ -83,6 +84,12 @@ private:
     double currentMidi = -1;  // glides towards the target
     int64_t renderedTo = 0;
     int heldNote = -1000;     // quantiser state for Degree targets
+
+    // Guards against the pitch tracker's mistakes on real voices
+    double lastSung = -1.0;   // the sung note at the last voiced grain, octave slips removed
+    double lastSungPos = 0.0;
+    double slipTime = 0.0;    // how long the tracker has been an octave (or twelfth) away
+    double unvoicedRun = 0.0; // samples since the last voiced grain
 
     float detuneCents = 0.0f;
     double driftPhase = 0.0, driftRate = 0.2;

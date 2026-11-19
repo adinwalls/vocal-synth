@@ -43,6 +43,9 @@ void PsolaVoice::start (const Target& t, float g, int64_t outputStart)
     renderedTo = outputStart;
     currentMidi = -1.0;
     heldNote = -1000;
+    lastSung = -1.0;
+    slipTime = 0.0;
+    unvoicedRun = 0.0;
     lastHalf = maxHalf;
     stutterLeft = dropLeft = flickLeft = 0;
 }
@@ -69,9 +72,43 @@ void PsolaVoice::kill()
     std::fill (wsum.begin(), wsum.end(), 0.0f);
 }
 
+// The sung note at a mark, with the pitch tracker's octave slips taken out.
+// On a real voice the tracker now and then reports the octave below or above
+// (or a twelfth away) for a few periods, mostly as a note starts or dies away.
+// Nobody leaps exactly an octave inside one period, so a jump like that is
+// treated as a slip and folded back until it has lasted long enough to be a
+// real leap. The grain still uses the mark's own period, so the sound stays
+// continuous either way.
+double PsolaVoice::steadySung (const Mark& m)
+{
+    double sung = hzToMidi (fs / m.period);
+    if (lastSung > 0.0 && synthPos - lastSungPos < 0.06 * fs)
+    {
+        static const double slips[] = { 12.0, -12.0, 19.0, -19.0, 24.0, -24.0 };
+        double slip = 0.0;
+        for (double k : slips)
+            if (std::abs (sung - lastSung - k) < 2.0) { slip = k; break; }
+        if (slip != 0.0)
+        {
+            slipTime += synthPos - lastSungPos;
+            if (slipTime < 0.15 * fs)
+                sung -= slip;
+            else
+                slipTime = 0.0;       // it has stayed: a real leap
+        }
+        else
+            slipTime = 0.0;
+    }
+    else
+        slipTime = 0.0;
+    lastSung = sung;
+    lastSungPos = synthPos;
+    return sung;
+}
+
 double PsolaVoice::targetMidi (const Mark& m, const VoiceSettings& s)
 {
-    const double sung = hzToMidi (fs / m.period);
+    const double sung = steadySung (m);
     double base = 0.0, deviation = 0.0;
 
     if (target.kind == Target::Degree)
@@ -171,7 +208,9 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
         if (m->voiced)
         {
             const double want = targetMidi (*m, s);
-            if (currentMidi < 0.0)
+            // A new note after a breath or a consonant starts on its pitch; only
+            // notes that run into each other glide.
+            if (currentMidi < 0.0 || unvoicedRun > 0.03 * fs)
                 currentMidi = want;
             else
             {
@@ -187,11 +226,13 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
             half = m->period;
             step = m->period / ratio;
             f = formant;
+            unvoicedRun = 0.0;
         }
         else
         {
             half = spacing;
             step = spacing;
+            unvoicedRun += spacing;
             const bool lead = target.kind == Target::Degree && target.value == 0;
             level = lead ? 1.0f : s.consonants;
         }

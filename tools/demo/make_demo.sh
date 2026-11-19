@@ -22,9 +22,9 @@ if [ -z "$VOICE" ]; then
 fi
 ${CXX:-g++} -O2 -std=c++17 $(pkg-config --cflags cairo) -o build/demo_video \
     tools/demo/demo_video.cpp src/dsp/*.cpp $(pkg-config --libs cairo)
-# turn the Output knob down if the loudest scene would clip
+# turn the mix down so the loudest scene peaks at -6 dBFS
 PEAK=$(./build/demo_video "$VOICE" - $KEY measure)
-TRIM=$(awk -v p="$PEAK" 'BEGIN { d = 20 * log(0.8 / p) / log(10); printf "%.1f", d < 0 ? d : 0 }')
+TRIM=$(awk -v p="$PEAK" 'BEGIN { d = 20 * log(0.5 / p) / log(10); printf "%.1f", d < 0 ? d : 0 }')
 ./build/demo_video "$VOICE" build/demo_audio.wav $KEY out=$TRIM |
     ffmpeg -hide_banner -loglevel error -y -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - \
         -c:v libx264 -pix_fmt yuv420p -crf 18 build/demo_video.mp4
