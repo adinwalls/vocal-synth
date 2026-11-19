@@ -105,6 +105,13 @@ public:
             }
             if (any) lastActive = now;
             if (now - lastActive < kWindow + 0.5) dirty = true;
+
+            // LIM lamp: lights while the output limiter is holding the level back,
+            // brighter the harder it works, and lingers a moment so a short catch shows
+            const float limDb = eng != nullptr ? eng->meterLimitDb.load (std::memory_order_relaxed) : 0.0f;
+            const double hit = limDb < -0.2f ? std::clamp (0.45 - limDb / 6.0, 0.45, 1.0) : 0.0;
+            const double glow = std::max (hit, limGlow - 0.07);
+            if (glow != limGlow) { limGlow = std::max (0.0, glow); dirty = true; }
         }
         if (notesMode() && eng != nullptr)
         {
@@ -343,6 +350,7 @@ private:
     static constexpr int kHistSize = 512;
     std::vector<Sample> hist;
     int histHead = 0, histCount = 0;
+    double limGlow = 0.0;   // brightness of the LIM lamp
     const Sample& at (int k) const { return hist[(size_t) ((histHead - 1 - k + kHistSize) % kHistSize)]; }
 
     Host* host;
@@ -829,14 +837,15 @@ private:
         rgb (cr, kPrint); text (cr, "by Adin Walls", 68, 50, 11, -1);
         cairo_select_font_face (cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
 
-        // status LEDs: signal, and harmony voices sounding
+        // status LEDs: signal, harmony voices sounding, and the output limiter at work
         const bool sig = sungMidi() > 0.0f;
         bool harm = false;
         if (histCount > 0 && nowT - at (0).t < 0.3)
             for (int i = 1; i < kSlots; ++i) harm = harm || at (0).v[i] > 0.0f;
-        led (cr, 222, 21, 3.6, kGreen, sig ? 1.0 : 0.0);
-        led (cr, 222, 39, 3.6, kAccent, harm ? 1.0 : 0.0);
-        rgb (cr, kPrint); text (cr, "SIG", 230, 24, 8, -1); text (cr, "HRM", 230, 42, 8, -1);
+        led (cr, 222, 17, 3.2, kGreen, sig ? 1.0 : 0.0);
+        led (cr, 222, 31, 3.2, kAccent, harm ? 1.0 : 0.0);
+        led (cr, 222, 45, 3.2, kRed, limGlow);
+        rgb (cr, kPrint); text (cr, "SIG", 230, 20, 8, -1); text (cr, "HRM", 230, 34, 8, -1); text (cr, "LIM", 230, 48, 8, -1);
 
         // scale selector (recessed window)
         const Rect b = kScaleBox;

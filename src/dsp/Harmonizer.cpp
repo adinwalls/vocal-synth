@@ -12,6 +12,8 @@ void Harmonizer::prepare (double sampleRate, float minF0, float maxF0)
     analyzer.prepare (sampleRate, minF0, maxF0);
     mangler.prepare (sampleRate);
     echo.prepare (sampleRate);
+    trim.prepare (sampleRate);
+    limiter.prepare (sampleRate);
     // The newest usable pitch mark trails the input by up to ~2.35 periods and a
     // grain reaches one period ahead of its centre. 2.5 periods keeps latency
     // down; when the lowest notes run ahead, the voice reuses the newest mark.
@@ -40,6 +42,8 @@ void Harmonizer::reset()
     analyzer.reset();
     mangler.reset();
     echo.reset();
+    trim.reset();
+    limiter.reset();
     for (auto& v : voices)
         v.kill();
     midiNote.fill (-1);
@@ -308,6 +312,21 @@ void Harmonizer::processChunk (const float* in, float* outL, float* outR, int n)
         outR[i] = d + leadR[(size_t) i] * leadG + harmR[(size_t) i] * params.harmony;
     }
 
+    // Clipping protection, part one: a stack bigger than the default one is
+    // turned down to the default's level, so Mangle and the echo see a level
+    // that does not depend on how many voices are on.
+    if (params.protect)
+    {
+        float harm = 0.0f;
+        for (int i = 0; i < kNumVoices; ++i)
+            if (i != kLeadSlot)
+                harm += voices[(size_t) i].level() * voices[(size_t) i].level();
+        const float lead = params.lead * voices[(size_t) kLeadSlot].level();
+        const float power = params.dry * params.dry + lead * lead + 0.5f * params.harmony * params.harmony * harm;
+        trim.process (outL, outR, n, trim.target (power));
+        meterTrimDb.store (20.0f * std::log10 (trim.current()), std::memory_order_relaxed);
+    }
+
     mangler.process (outL, outR, n, mangle * std::clamp (mg.crush, 0.0f, 1.0f),
                      mangle * std::clamp (mg.hiss, 0.0f, 1.0f), mangle * std::clamp (mg.crackle, 0.0f, 1.0f));
 
@@ -317,6 +336,13 @@ void Harmonizer::processChunk (const float* in, float* outL, float* outR, int n)
     {
         outL[i] *= params.output;
         outR[i] *= params.output;
+    }
+
+    // Part two: nothing leaves the plugin above the ceiling.
+    if (params.protect)
+    {
+        const float low = limiter.process (outL, outR, n);
+        meterLimitDb.store (low < 1.0f ? 20.0f * std::log10 (low) : 0.0f, std::memory_order_relaxed);
     }
 }
 

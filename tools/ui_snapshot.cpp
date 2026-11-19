@@ -34,6 +34,7 @@ int main (int argc, char** argv)
     values[pAutoVoices] = 2;
     values[pTonic] = 1;
     if (what == "notes") { values[pMode] = kModeNotes; values[pTonic] = 0; }
+    if (what == "limit") values[pOutput] = 12;   // loud enough to light the LIM lamp
 
     Harmonizer engine;
     engine.prepare (fs);

@@ -53,6 +53,9 @@ public:
     bool isReleasing() const { return releasing; }
     const Target& getTarget() const { return target; }
 
+    // How loud this voice is in the mix right now (fade and velocity), 0 when off.
+    float level() const { return active ? env * gain : 0.0f; }
+
     uint64_t order = 0; // allocation order, for voice stealing
 
     // For the display: the pitch this voice is singing right now as a
