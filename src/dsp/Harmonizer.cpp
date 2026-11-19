@@ -10,6 +10,7 @@ void Harmonizer::prepare (double sampleRate, float minF0, float maxF0)
 {
     fs = sampleRate;
     analyzer.prepare (sampleRate, minF0, maxF0);
+    mangler.prepare (sampleRate);
     // The newest usable pitch mark trails the input by up to ~2.35 periods and a
     // grain reaches one period ahead of its centre. 2.5 periods keeps latency
     // down; when the lowest notes run ahead, the voice reuses the newest mark.
@@ -36,6 +37,7 @@ void Harmonizer::prepare (double sampleRate, float minF0, float maxF0)
 void Harmonizer::reset()
 {
     analyzer.reset();
+    mangler.reset();
     for (auto& v : voices)
         v.kill();
     midiNote.fill (-1);
@@ -262,6 +264,11 @@ void Harmonizer::processChunk (const float* in, float* outL, float* outR, int n)
 
     updateFixedVoices (outputStart);
 
+    const MangleSettings& mg = params.mangle;
+    const float mangle = std::clamp (mg.amount, 0.0f, 1.0f);
+    params.voice.scatter = mangle * std::clamp (mg.scatter, 0.0f, 1.0f);
+    params.voice.wobbleCents = mangler.wobble (mangle * std::clamp (mg.wobble, 0.0f, 1.0f), n);
+
     std::fill (leadL.begin(), leadL.begin() + n, 0.0f);
     std::fill (leadR.begin(), leadR.begin() + n, 0.0f);
     std::fill (harmL.begin(), harmL.begin() + n, 0.0f);
@@ -290,8 +297,17 @@ void Harmonizer::processChunk (const float* in, float* outL, float* outR, int n)
     for (int i = 0; i < n; ++i)
     {
         const float d = analyzer.sample (outputStart + i) * params.dry;
-        outL[i] = params.output * (d + leadL[(size_t) i] * leadG + harmL[(size_t) i] * params.harmony);
-        outR[i] = params.output * (d + leadR[(size_t) i] * leadG + harmR[(size_t) i] * params.harmony);
+        outL[i] = d + leadL[(size_t) i] * leadG + harmL[(size_t) i] * params.harmony;
+        outR[i] = d + leadR[(size_t) i] * leadG + harmR[(size_t) i] * params.harmony;
+    }
+
+    mangler.process (outL, outR, n, mangle * std::clamp (mg.crush, 0.0f, 1.0f),
+                     mangle * std::clamp (mg.hiss, 0.0f, 1.0f), mangle * std::clamp (mg.crackle, 0.0f, 1.0f));
+
+    for (int i = 0; i < n; ++i)
+    {
+        outL[i] *= params.output;
+        outR[i] *= params.output;
     }
 }
 

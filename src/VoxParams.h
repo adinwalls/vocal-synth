@@ -20,6 +20,7 @@ enum Params
     pOutPitch,     // output: detected pitch in Hz
     pLowLatency,
     pOutVoices,    // output: number of sounding voices
+    pMangle, pScatter, pWobble, pCrush, pHiss, pCrackle,
     pCount
 };
 
@@ -65,6 +66,18 @@ static const ParamSpec kSpecs[pCount] = {
     { "Low Latency", "Low Lat.", "low_latency", "", 0, 1, 0, kBool,
       "For monitoring while you sing: about 14 ms instead of 35 ms. Turn off for mixing." },
     { "Active Voices", "Voices", "active_voices", "", 0, Harmonizer::kNumVoices, 0, kOutput, "" },
+    { "Mangle", "Mangle", "mangle", "%", 0, 100, 0, kFloat,
+      "How worn and broken the sound is, from a little grit to wrecked (0 = off). Scales the five knobs after it." },
+    { "Mangle Scatter", "Scatter", "mangle_scatter", "%", 0, 100, 50, kFloat,
+      "Roughs up the sung voices: hoarse at first, then stutters, gaps and glitches" },
+    { "Mangle Wobble", "Wobble", "mangle_wobble", "%", 0, 100, 40, kFloat,
+      "Pitch drifts and flutters like a worn tape" },
+    { "Mangle Crush", "Crush", "mangle_crush", "%", 0, 100, 50, kFloat,
+      "Fuzz, then the crunchy, gritty sound of an old sampler" },
+    { "Mangle Hiss", "Hiss", "mangle_hiss", "%", 0, 100, 50, kFloat,
+      "Tape hiss that swells when you sing" },
+    { "Mangle Crackle", "Crackle", "mangle_crackle", "%", 0, 100, 50, kFloat,
+      "Ticks and pops like an old record" },
 };
 
 static const char* const kKeyNames[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
@@ -129,6 +142,12 @@ inline HarmonizerParams toEngine (const float* v)
     p.voice.attackMs = v[pAttack];
     p.voice.releaseMs = v[pRelease];
     p.voice.consonants = v[pConsonants] * 0.01f;
+    p.mangle.amount = v[pMangle] * 0.01f;
+    p.mangle.scatter = v[pScatter] * 0.01f;
+    p.mangle.wobble = v[pWobble] * 0.01f;
+    p.mangle.crush = v[pCrush] * 0.01f;
+    p.mangle.hiss = v[pHiss] * 0.01f;
+    p.mangle.crackle = v[pCrackle] * 0.01f;
     return p;
 }
 

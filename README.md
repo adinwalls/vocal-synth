@@ -27,6 +27,7 @@ voice in ──► pitch tracker (YIN, shared) ──► pitch marks
 * **Tuned lead** is a voice at "0 scale steps", so it's the sung note snapped to the key, like the first Auto-Tune in the Messina chain.
 * **Tonic drone** holds the key's root, like the Messina's second Auto-Tune that fed the H8000.
 * **Loose** gives each voice its own small detune and slow drift so the stack sounds like a group, not a machine.
+* **Mangle** wears the sound out on purpose. Scatter and Wobble reuse the voice engine itself: the same grains of your voice are spaced unevenly, shuffled, repeated, flipped or dropped, and bent in pitch like a tired tape. Crush, Hiss and Crackle then work on the finished mix. It costs nothing while Amount is at 0.
 * **Latency:** normally 1664 samples at 48 kHz (35 ms), reported to the host so Mixbus lines up playback. It's sized for the lowest pitch tracked (75 Hz). **Low Latency** drops the reported delay to 3 ms and builds each grain from the newest complete period, so the real delay follows your pitch: about 14 ms at A3, less for higher notes. Use it while tracking; turn it off for mixing, when exact timing matters more.
 
 ## The screen
@@ -37,6 +38,7 @@ Same family look as TuneBrew and LevelBrew.
 * **Key buttons:** click to set the key. Green lamp = home note, yellow = in the scale, red = the note you're singing.
 * **Display:** the last 6 seconds. Amber is your voice, white the tuned lead, teal the auto voices, green the tonic, pink the MIDI voices.
 * **Auto voices panel:** click a lamp to turn voices on or off, use the arrows (or scroll) to change each voice's interval. The note each voice is singing shows on the right.
+* **Mangle row:** the big Amount knob takes the sound from clean to wrecked; the five small knobs choose what kind of damage. The little screen draws a clean wave and what your settings do to it.
 * **Knobs:** drag up and down, hold Shift for fine moves, double-click for the default, or scroll.
 
 ## Controls
@@ -55,6 +57,12 @@ Same family look as TuneBrew and LevelBrew.
 | Glide, Attack, Release | Note movement and how voices fade in and out. |
 | Consonants | How much of your s, t and breath sounds the harmony voices copy. |
 | Low Latency | For monitoring while you sing (see Latency above). |
+| Mangle (Amount) | How worn and broken the sound is. 0 = off, around 20 = a little grit, 100 = wrecked. It scales the five knobs below, so you can set a flavour once and ride this one knob. |
+| Scatter | Roughs up the sung voices (lead and harmonies). Low: hoarse and raspy. High: stutters, gaps, backwards bits and sudden octave jumps. |
+| Wobble | Pitch drifts and flutters like a worn cassette. All voices move together. |
+| Crush | Fuzz at first, then the crunchy, gritty sound of an old sampler or a bad phone line. |
+| Hiss | Tape hiss. It sits quietly in the gaps and swells when you sing. |
+| Crackle | Ticks and pops like an old record, more of them while you sing. |
 
 ## Suggested notes (no keyboard needed)
 
@@ -78,7 +86,7 @@ This needs the host to tell the plugin where the song is, which the LV2 and VST3
 
 ## Presets
 
-Seven factory presets show up in your DAW's preset menu for the plugin. They never change **Key** or **Low Latency**, so set your key once and flip through them.
+Ten factory presets show up in your DAW's preset menu for the plugin. They never change **Key** or **Low Latency**, so set your key once and flip through them.
 
 | Preset | What it is |
 |---|---|
@@ -89,6 +97,9 @@ Seven factory presets show up in your DAW's preset menu for the plugin. They nev
 | Keys Choir | MIDI only: your voice sings the chords you hold. Long release. |
 | Wide Thirds | A soft, natural pair either side of the lead that keeps your vibrato. |
 | Low Shadow | A darker double an octave down. |
+| Worn Tape | A cassette played too often: drifting pitch, hiss, a little rasp. |
+| Dusty Record | Tuned lead and a low drone played off an old record. |
+| Broken Choir | Four voices falling apart: stutters, gaps and crunch. |
 
 They live in `src/VoxPresets.h`, one short block each.
 

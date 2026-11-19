@@ -352,6 +352,63 @@ int main()
         check (h.activeVoices() == 0, "written notes stop when the song stops");
     }
 
+    // 14. Mangle: off is exactly the clean sound, on stays sane all the way up.
+    {
+        auto in = test::synthVowel (fs, 2.0, 220.0);
+        in.resize (in.size() + 48000, 0.0f);   // then a second of silence
+        auto p = only (1.0f, 0.7f);
+        p.autoVoices = 2;
+        const auto clean = run (in, fs, p);
+
+        auto off = p;
+        off.mangle = { 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+        const auto offOut = run (in, fs, off);
+        check (offOut.l == clean.l && offOut.r == clean.r, "Mangle at 0 leaves the sound untouched, whatever its other knobs say");
+
+        auto rms = [&] (const Render& x, double from, double to)
+        {
+            double e = 0.0;
+            const auto a = (size_t) (from * fs), b = (size_t) (to * fs);
+            for (size_t i = a; i < b; ++i) e += 0.5 * (x.l[i] * x.l[i] + x.r[i] * x.r[i]);
+            return std::sqrt (e / (double) (b - a));
+        };
+        const double ref = rms (clean, 0.5, 1.9);
+        bool finite = true, level = true, heard = true;
+        for (float amount : { 0.1f, 0.5f, 1.0f })
+        {
+            auto m = p;
+            m.mangle = { amount, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+            const auto out = run (in, fs, m);
+            double peak = 0.0, diff = 0.0;
+            for (size_t i = 0; i < out.l.size(); ++i)
+            {
+                finite = finite && std::isfinite (out.l[i]) && std::isfinite (out.r[i]);
+                peak = std::max (peak, (double) std::max (std::abs (out.l[i]), std::abs (out.r[i])));
+                diff += std::abs (out.l[i] - clean.l[i]);
+            }
+            diff /= (double) out.l.size();
+            const double sung = rms (out, 0.5, 1.9), quiet = rms (out, 2.6, 2.95);
+            std::printf ("      mangle %3.0f%%: sung %+.1f dB vs clean, peak %.2f, in the gaps %.1f dB\n",
+                         amount * 100.0, 20.0 * std::log10 (sung / ref), peak, 20.0 * std::log10 (quiet + 1e-9));
+            level = level && sung > ref * 0.35 && sung < ref * 2.0 && peak < 1.0 && quiet < ref;
+            heard = heard && diff > 1.0e-4;
+        }
+        check (finite, "full Mangle never produces a broken number");
+        check (level, "Mangle keeps the level within 9 dB of the clean sound and never clips");
+        check (heard, "even a little Mangle is audible");
+
+        auto full = p;
+        full.mode = kModeMidi;
+        full.autoVoices = 0;
+        full.mangle = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+        const auto ten = test::synthVowel (fs, 10.0, 220.0);
+        const auto t0 = std::chrono::steady_clock::now();
+        run (ten, fs, full, [] (Harmonizer& h) { for (int n = 0; n < 10; ++n) h.noteOn (52 + 2 * n, 1.0f); });
+        const double secs = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+        std::printf ("      10 voices, full Mangle: %.0fx real time (%.2f%% of one core)\n", 10.0 / secs, 100.0 * secs / 10.0);
+        check (secs < 1.0, "full Mangle on 10 voices still runs at least 10x faster than real time");
+    }
+
     Harmonizer h;
     h.prepare (fs);
     std::printf ("\nReported latency at 48 kHz: %d samples (%.1f ms)", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);

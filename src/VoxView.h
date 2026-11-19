@@ -22,7 +22,7 @@ class VoxView
 {
 public:
     static constexpr double kCheek = 26;                       // wooden side panels
-    static constexpr double kFaceW = 860, kFaceH = 540;
+    static constexpr double kFaceW = 860, kFaceH = 700;
     static constexpr double kW = kFaceW + 2 * kCheek, kH = kFaceH;
 
     struct Host
@@ -135,6 +135,7 @@ public:
         if (notesMode()) drawNoteEditor (cr); else drawGraph (cr);
         drawVoicePanel (cr);
         pushButton (cr, kLowLatBtn, "LOW LATENCY", values[pLowLatency] > 0.5f, kAmber, 9.5, 12);
+        drawMangle (cr);
         for (int k = 0; k < kNumKnobs; ++k) drawKnob (cr, k);
         if (menuOpen) drawMenu (cr);
         cairo_restore (cr);
@@ -314,23 +315,27 @@ private:
     cairo_surface_t* bg = nullptr;
     int bgW = 0, bgH = 0;
 
-    // ---------------- layout (faceplate coords, 860 x 540) ----------------
+    // ---------------- layout (faceplate coords, 860 x 700) ----------------
     struct Rect { double x, y, w, h; };
     static constexpr Rect kScaleBox  = { 254, 14, 220, 34 };
     static constexpr Rect kKeyStrip  = { 92, 68, 744, 44 };
     static constexpr Rect kGraph     = { 24, 124, 588, 240 };
     static constexpr Rect kPanel     = { 624, 124, 212, 240 };
     static constexpr double kModTop = 380, kSeamX = 506;
+    static constexpr double kMod2Top = 540;                    // the Mangle module, full width
+    static constexpr Rect kMangleScr = { 476, 556, 360, 110 };
     static constexpr Rect kLowLatBtn = { 716, 386, 120, 22 };
     static constexpr Rect kSuggestBtn = { 634, 328, 100, 26 };
     static constexpr Rect kClearBtn   = { 742, 328, 84, 26 };
     static constexpr double kViewLen = 10.0;   // seconds shown in the note editor
     static constexpr int kRows = 5;            // 4 auto voices + tonic
     static constexpr double kRowTop = 150, kRowH = 33;
-    static constexpr int kNumKnobs = 12;
+    static constexpr int kNumKnobs = 18;
+    static constexpr int kMixKnobs = 12;       // knobs 12.. belong to the Mangle module
     static constexpr int kVoiceKnobs = 7;
     static constexpr int kKnobParams[kNumKnobs] = { pFormant, pNatural, pLoose, pGlide, pAttack, pRelease, pConsonants,
-                                                    pDry, pLead, pHarmony, pSpread, pOutput };
+                                                    pDry, pLead, pHarmony, pSpread, pOutput,
+                                                    pMangle, pScatter, pWobble, pCrush, pHiss, pCrackle };
     static constexpr double kKnobY = 452, kKnobR = 18;
     static constexpr double kWindow = 6.0;   // seconds shown in the graph
     static constexpr double kSpan = 26.0;    // semitones shown in the graph
@@ -348,12 +353,16 @@ private:
     static double knobX (int k)
     {
         if (k < kVoiceKnobs) return 44 + k * 68.0;
-        return kSeamX + 44 + (k - kVoiceKnobs) * 68.0;
+        if (k < kMixKnobs) return kSeamX + 44 + (k - kVoiceKnobs) * 68.0;
+        return k == kMixKnobs ? 66.0 : 160 + (k - kMixKnobs - 1) * 66.0;
     }
+    // the Mangle amount knob is the big one
+    static double knobR (int k) { return k == kMixKnobs ? 24.0 : kKnobR; }
+    static double knobY (int k) { return k < kMixKnobs ? kKnobY : kMod2Top + 90 - knobR (k); }
     int knobAt (double x, double y) const
     {
         for (int k = 0; k < kNumKnobs; ++k)
-            if (std::hypot (x - knobX (k), y - kKnobY) <= kKnobR + 9) return k;
+            if (std::hypot (x - knobX (k), y - knobY (k)) <= knobR (k) + 9) return k;
         return -1;
     }
     int keyCellAt (double x, double y) const
@@ -602,6 +611,10 @@ private:
         const float v = values[p];
         switch (p)
         {
+            case pMangle:
+                if (v < 0.5f) std::snprintf (buf, n, "off");
+                else std::snprintf (buf, n, "%.0f%%", v);
+                break;
             case pDry: case pLead: case pHarmony:
                 if (v <= -59.9f) std::snprintf (buf, n, "off");
                 else std::snprintf (buf, n, "%+.1f dB", v);
@@ -625,6 +638,9 @@ private:
             case pDry: return "DRY";           case pLead: return "LEAD";
             case pHarmony: return "HARMONY";   case pSpread: return "SPREAD";
             case pOutput: return "OUTPUT";
+            case pMangle: return "AMOUNT";     case pScatter: return "SCATTER";
+            case pWobble: return "WOBBLE";     case pCrush: return "CRUSH";
+            case pHiss: return "HISS";         case pCrackle: return "CRACKLE";
         }
         return "";
     }
@@ -645,6 +661,12 @@ private:
             case pHarmony:    return kCapBlue;
             case pSpread:     return kCapBlack;
             case pOutput:     return kCapPink;
+            case pMangle:     return kCapPink;
+            case pScatter:    return kCapGreen;
+            case pWobble:     return kCapBlue;
+            case pCrush:      return kCapBlack;
+            case pHiss:       return kCapGrey;
+            case pCrackle:    return kCapGrey;
         }
         return kCapGrey;
     }
@@ -674,8 +696,9 @@ private:
             cairo_set_source_rgba (cr, 0, 0, 0, 0.35); cairo_rectangle (cr, x + w - 1, y, 1, h); cairo_fill (cr);
         };
         plate (4, 0, kFaceW - 8, kModTop - 4);
-        plate (4, kModTop, kSeamX - 6, kFaceH - kModTop);
-        plate (kSeamX + 2, kModTop, kFaceW - kSeamX - 6, kFaceH - kModTop);
+        plate (4, kModTop, kSeamX - 6, kMod2Top - kModTop - 4);
+        plate (kSeamX + 2, kModTop, kFaceW - kSeamX - 6, kMod2Top - kModTop - 4);
+        plate (4, kMod2Top, kFaceW - 8, kFaceH - kMod2Top);
         screw (cr, 16, 12, 0.4); screw (cr, kFaceW - 16, 12, 1.1);
         screw (cr, 16, kModTop - 16, 0.9); screw (cr, kFaceW - 16, kModTop - 16, 0.2);
     }
@@ -690,9 +713,104 @@ private:
         cairo_move_to (cr, 34, kModTop + 24.5); cairo_line_to (cr, kSeamX - 30, kModTop + 24.5); cairo_stroke (cr);
         cairo_move_to (cr, kSeamX + 30, kModTop + 24.5); cairo_line_to (cr, kLowLatBtn.x - 12, kModTop + 24.5); cairo_stroke (cr);
         rgb (cr, kPrint);
-        text (cr, "VB 1", 16, kFaceH - 10, 9, -1); text (cr, "CHARACTER / MOVEMENT", kSeamX - 14, kFaceH - 10, 9, 1);
-        text (cr, "VB 2", kSeamX + 14, kFaceH - 10, 9, -1); text (cr, "LEVELS / WIDTH", kFaceW - 16, kFaceH - 10, 9, 1);
-        screw (cr, kSeamX / 2, kFaceH - 13, 0.3); screw (cr, (kSeamX + kFaceW) / 2, kFaceH - 13, 1.2);
+        const double b1 = kMod2Top - 4;
+        text (cr, "VB 1", 16, b1 - 10, 9, -1); text (cr, "CHARACTER / MOVEMENT", kSeamX - 14, b1 - 10, 9, 1);
+        text (cr, "VB 2", kSeamX + 14, b1 - 10, 9, -1); text (cr, "LEVELS / WIDTH", kFaceW - 16, b1 - 10, 9, 1);
+        screw (cr, kSeamX / 2, b1 - 13, 0.3); screw (cr, (kSeamX + kFaceW) / 2, b1 - 13, 1.2);
+
+        // the Mangle module
+        screw (cr, 16, kMod2Top + 12, 1.3); screw (cr, kFaceW - 16, kFaceH - 13, 0.6);
+        rgb (cr, kText); text (cr, "MANGLE", 34, kMod2Top + 16, 11, -1);
+        cairo_set_source_rgba (cr, kPrint.r, kPrint.g, kPrint.b, 0.35); cairo_set_line_width (cr, 1);
+        cairo_move_to (cr, 112, kMod2Top + 12.5); cairo_line_to (cr, kMangleScr.x - 20, kMod2Top + 12.5); cairo_stroke (cr);
+        cairo_move_to (cr, 113.5, kMod2Top + 40); cairo_line_to (cr, 113.5, kFaceH - 30); cairo_stroke (cr);
+        rgb (cr, kPrint);
+        text (cr, "VB 3", 16, kFaceH - 10, 9, -1); text (cr, "GRAIN / DAMAGE", kMangleScr.x - 20, kFaceH - 10, 9, 1);
+    }
+
+    // A cheap repeatable random number for the picture (not for sound).
+    static double pic (int i, int salt)
+    {
+        uint32_t h = (uint32_t) i * 2654435761u + (uint32_t) salt * 40503u + 12345u;
+        h ^= h >> 15; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16;
+        return (h & 0xFFFFFF) / 16777216.0;
+    }
+
+    // The Mangle screen: a clean wave in the background and, over it, what the
+    // knobs are doing to it. It is a picture of the settings, not a meter.
+    void drawMangle (cairo_t* cr)
+    {
+        const Rect r = kMangleScr;
+        const double amt = values[pMangle] * 0.01;
+        const double sc = amt * values[pScatter] * 0.01, wb = amt * values[pWobble] * 0.01,
+                     cu = amt * values[pCrush] * 0.01, hs = amt * values[pHiss] * 0.01, ck = amt * values[pCrackle] * 0.01;
+
+        led (cr, 98, kMod2Top + 12, 3.6, kAmber, amt > 0.004 ? 0.35 + 0.65 * amt : 0.0);
+
+        window (cr, r);
+        cairo_save (cr);
+        rrect (cr, r.x + 2, r.y + 2, r.w - 4, r.h - 4, 5); cairo_clip (cr);
+        const double cy = r.y + r.h / 2 + 5, amp = r.h * 0.36;
+        cairo_set_source_rgba (cr, 1, 1, 1, 0.06); cairo_set_line_width (cr, 1);
+        cairo_move_to (cr, r.x, std::floor (cy) + 0.5); cairo_line_to (cr, r.x + r.w, std::floor (cy) + 0.5); cairo_stroke (cr);
+
+        auto voice = [] (double t)
+        {
+            const double swell = 0.55 + 0.45 * std::sin (2.0 * M_PI * (1.5 * t - 0.2));
+            return swell * (0.7 * std::sin (2.0 * M_PI * 9.0 * t) + 0.3 * std::sin (2.0 * M_PI * 18.0 * t + 0.7));
+        };
+        const int N = (int) r.w * 2;
+        auto trace = [&] (bool mangled)
+        {
+            for (int i = 0; i <= N; ++i)
+            {
+                double t = (double) i / N, y;
+                if (! mangled)
+                    y = voice (t);
+                else
+                {
+                    if (cu > 0.02)                       // crush: coarse steps in time
+                    {
+                        const double cells = N / (1.0 + cu * cu * 30.0);
+                        t = std::floor (t * cells) / cells;
+                    }
+                    const int seg = (int) (t * 30.0);    // scatter: lost, repeated and uneven pieces
+                    double gain = 1.0, back = 0.0;
+                    if (pic (seg, 1) < sc * sc * 0.55) gain = 0.0;
+                    else
+                    {
+                        if (pic (seg, 2) < sc * 0.6) back = (1.0 + (int) (pic (seg, 3) * 3.0)) / 30.0;
+                        gain = 1.0 - sc * 0.6 * pic (seg, 4);
+                    }
+                    const double tw = t - back + wb * 0.03 * std::sin (2.0 * M_PI * 2.2 * t);   // wobble: stretch and squeeze
+                    y = voice (tw) * gain;
+                    if (cu > 0.02)                       // crush: coarse steps in level
+                    {
+                        const double levels = 2.0 + 30.0 * (1.0 - cu) * (1.0 - cu);
+                        y = std::round (y * levels) / levels;
+                    }
+                    y += hs * 0.22 * (pic (i, 5) * 2.0 - 1.0);                                  // hiss: fuzz on the line
+                    const int cell = i / 12;                                                    // crackle: spikes
+                    if (i % 12 == (int) (pic (cell, 6) * 12.0) && pic (cell, 7) < ck * ck * 0.8)
+                        y += (pic (cell, 8) < 0.5 ? -1.0 : 1.0) * (0.35 + 0.9 * pic (cell, 9)) * (0.4 + 0.6 * ck);
+                }
+                const double px = r.x + 6 + (r.w - 12) * i / N, py = cy - y * amp;
+                if (i == 0) cairo_move_to (cr, px, py); else cairo_line_to (cr, px, py);
+            }
+        };
+        cairo_set_line_join (cr, CAIRO_LINE_JOIN_ROUND);
+        rgb (cr, kDim, amt > 0.004 ? 0.30 : 0.9); cairo_set_line_width (cr, 1.2); trace (false); cairo_stroke (cr);
+        if (amt > 0.004)
+        {
+            cairo_set_source_rgba (cr, kAmber.r, kAmber.g, kAmber.b, 0.16); cairo_set_line_width (cr, 4.5); trace (true); cairo_stroke (cr);
+            rgb (cr, kAmber); cairo_set_line_width (cr, 1.3); trace (true); cairo_stroke (cr);
+        }
+        cairo_restore (cr);
+
+        const char* word = amt <= 0.004 ? "CLEAN" : amt < 0.2 ? "SUBTLE" : amt < 0.4 ? "WORN" : amt < 0.6 ? "ROUGH"
+                         : amt < 0.8 ? "BROKEN" : "WRECKED";
+        rgb (cr, kDim, 0.9); text (cr, "DAMAGE", r.x + 12, r.y + 17, 8, -1);
+        rgb (cr, amt > 0.004 ? kAmber : kDim); text (cr, word, r.x + r.w - 12, r.y + 17, 9, 1);
     }
 
     void drawHeader (cairo_t* cr)
@@ -1237,7 +1355,7 @@ private:
     void drawKnob(cairo_t* cr, int k)
     {
         const int p = kKnobParams[k];
-        const double cx = knobX(k), cy = kKnobY, r = kKnobR;
+        const double cx = knobX(k), cy = knobY(k), r = knobR(k);
         const double a0 = 0.75 * M_PI, a1 = 2.25 * M_PI;
         const double n = toNorm(p, values[p]);
         const double av = a0 + (a1 - a0) * n;
