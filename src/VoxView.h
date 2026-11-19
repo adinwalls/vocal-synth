@@ -367,7 +367,7 @@ private:
     static constexpr int kRows = 5;            // 4 auto voices + tonic
     static constexpr double kRowTop = 150, kRowH = 33;
     static constexpr Rect kDeck = { 12, 118, 836, 258 };       // the tape deck, when it is out
-    static constexpr Rect kEjectBtn = { 46, 514, 34, 16 };
+    static constexpr Rect kEjectBtn = { 440, 384, 36, 16 };     // top right of the Voices module
     static constexpr int kNumKnobs = 22;
     static constexpr int kDeckKnob0 = 12;      // knobs 12.. sit on the tape deck: Mangle, then the echo
     static constexpr int kVoiceKnobs = 7;
@@ -1321,7 +1321,7 @@ private:
 
 
     // ---------------- the tape deck ----------------
-    // An eject key, cassette-player style, under the Formant knob.
+    // An eject key, cassette-player style, labelled MANGLE, at the top right of the Voices module.
     bool deckBusy() const { return values[pEcho] > 0.5f || values[pMangle] > 0.5f; }
 
     void drawEject (cairo_t* cr)
@@ -1341,7 +1341,8 @@ private:
         cairo_set_source_rgb (cr, 0.10, 0.12, 0.16);
         cairo_move_to (cr, cx, cy - 5); cairo_line_to (cr, cx + 6.5, cy + 0.8); cairo_line_to (cr, cx - 6.5, cy + 0.8); cairo_close_path (cr); cairo_fill (cr);
         cairo_rectangle (cr, cx - 6.5, cy + 2.4, 13, 2.2); cairo_fill (cr);
-        led (cr, b.x + b.w + 11, b.y + b.h / 2, 3.0, kAmber, deckBusy() ? 1.0 : 0.0);   // something on the deck is on
+        led (cr, b.x - 12, b.y + b.h / 2, 3.0, kAmber, deckBusy() ? 1.0 : 0.0);   // something on the deck is on
+        rgb (cr, kText); text (cr, "MANGLE", b.x - 22, b.y + b.h / 2 + 4, 11, 1);
     }
 
     static void brushed (cairo_t* cr, Rect r, double rad, double light)

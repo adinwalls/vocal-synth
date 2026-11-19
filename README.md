@@ -38,7 +38,7 @@ Same family look as TuneBrew and LevelBrew.
 * **Key buttons:** click to set the key. Green lamp = home note, yellow = in the scale, red = the note you're singing.
 * **Display:** the last 6 seconds. Amber is your voice, white the tuned lead, teal the auto voices, green the tonic, pink the MIDI voices.
 * **Auto voices panel:** click a lamp to turn voices on or off, use the arrows (or scroll) to change each voice's interval. The note each voice is singing shows on the right.
-* **Eject key** (under Formant): slides the tape mangler out over the display; press it again to put it away. Its little lamp shows when Mangle or the echo is on, even with the deck hidden.
+* **Mangle eject key** (top right of the Voices section): slides the tape mangler out over the display; press it again to put it away. Its little lamp shows when Mangle or the echo is on, even with the deck hidden.
 * **Knobs:** drag up and down, hold Shift for fine moves, double-click for the default, or scroll.
 
 ## Controls
@@ -68,7 +68,7 @@ Same family look as TuneBrew and LevelBrew.
 
 ![Tape deck](docs/voxbrew-tape.png)
 
-Press the eject key under the Formant knob and a brushed-metal tape deck slides up out of the panel. The six **Mangle** knobs are on its left (see Controls): Amount takes the sound from clean to wrecked and the other five choose the kind of damage. On its right is a tape echo that comes after everything else, Mangle included. It does nothing while Echo is at 0.
+Press the **Mangle** eject key at the top right of the Voices section and a brushed-metal tape deck slides up out of the panel. The six **Mangle** knobs are on its left (see Controls): Amount takes the sound from clean to wrecked and the other five choose the kind of damage. On its right is a tape echo that comes after everything else, Mangle included. It does nothing while Echo is at 0.
 
 | Knob | What it does |
 |---|---|
