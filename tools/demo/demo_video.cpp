@@ -8,7 +8,9 @@
 //
 // `key` is the major key of the vocal (C, C#, ... B; default A). Add the word
 // "synthetic" when the vocal is the stand-in from make_voice.py, so the captions say so.
-// "out=-3" sets the Output knob in dB; "measure" draws nothing and prints the peak level.
+// "out=-3" turns Dry, Lead and Harmony down by that many dB, so the mix has headroom
+// before it reaches Mangle and the echo (their saturation would otherwise be driven
+// harder than the knobs say); "measure" draws nothing and prints the peak level.
 // Raw BGRA frames go to stdout, the plugin's output goes to out.wav.
 // See tools/demo/make_demo.sh.
 
@@ -58,7 +60,7 @@ static std::vector<Scene> kScenes = {
       { { pMangle, 45 }, { pScatter, 20 }, { pWobble, 70 }, { pCrush, 25 }, { pHiss, 35 }, { pCrackle, 20 },
         { pEcho, 40 }, { pEchoRepeats, 45 }, { pEchoAge, 50 } }, true, -1, 0 },
     { "7. Just Mangle", "One slider pushes all of the damage from worn to wrecked",
-      {}, true, 70, 0 },
+      {}, true, 55, 0 },
     { "VoxBrew by Adin Walls", "Every sound here is the plugin's own engine at work on one raw vocal",
       {}, true, -1, 3.5 },
 };
@@ -103,7 +105,10 @@ int main (int argc, char** argv)
     }
     const std::string tuned = std::string ("VoxBrew snaps the voice to the key: ") + kKeyNames[key] + " major";
     kScenes[0].changes.push_back ({ pKey, (float) key });
-    kScenes[0].changes.push_back ({ pOutput, outDb });
+    for (Scene& sc : kScenes)
+        for (Change& c : sc.changes)
+            if ((c.param == pDry || c.param == pLead || c.param == pHarmony) && c.value > -59.0f)
+                c.value += outDb;
     kScenes[1].sub = tuned.c_str();
     if (synthetic)
     {
