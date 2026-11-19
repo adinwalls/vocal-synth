@@ -77,6 +77,8 @@ Press the **Mangle** eject key at the top right of the Voices section and a brus
 | Time | The gap between repeats, 60 to 1200 ms. Turning it bends the pitch, like changing the tape speed. |
 | Repeats | How many times the echo comes round. |
 
+Under the cassette is the **Just Mangle** slider, for when you don't want to think about six knobs. Slide it right and it pushes Amount and all five kinds of damage up together, starting from wherever their knobs are, until everything is at full. The lamps under it run from green through yellow and orange to red. Double-click it to switch it off.
+
 The reels turn while the echo is on, faster for shorter times.
 
 ## Suggested notes (no keyboard needed)

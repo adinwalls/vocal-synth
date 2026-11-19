@@ -77,7 +77,7 @@ int main (int argc, char** argv)
     }
     if (what == "tape")
     {
-        view.setValue (pEcho, 45); view.setValue (pEchoRepeats, 55); view.setValue (pMangle, 55);
+        view.setValue (pEcho, 45); view.setValue (pEchoRepeats, 55); view.setValue (pMangle, 55); view.setValue (pJustMangle, 70);
         view.setDeck (true, true);
         view.tick (t + 0.4);
     }

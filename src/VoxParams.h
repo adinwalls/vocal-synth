@@ -22,6 +22,7 @@ enum Params
     pOutVoices,    // output: number of sounding voices
     pMangle, pScatter, pWobble, pCrush, pHiss, pCrackle,
     pEcho, pEchoTime, pEchoRepeats, pEchoAge,
+    pJustMangle,
     pCount
 };
 
@@ -87,6 +88,8 @@ static const ParamSpec kSpecs[pCount] = {
       "How many times the echo comes round" },
     { "Tape Age", "Age", "tape_age", "%", 0, 100, 40, kFloat,
       "A worn tape: each repeat gets darker, wobblier and more squashed" },
+    { "Just Mangle", "Just Mangle", "just_mangle", "%", 0, 100, 0, kFloat,
+      "One slider for all of Mangle: pushes Amount and all five kinds of damage up together, on top of where their knobs are" },
 };
 
 static const char* const kKeyNames[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
@@ -151,12 +154,16 @@ inline HarmonizerParams toEngine (const float* v)
     p.voice.attackMs = v[pAttack];
     p.voice.releaseMs = v[pRelease];
     p.voice.consonants = v[pConsonants] * 0.01f;
-    p.mangle.amount = v[pMangle] * 0.01f;
-    p.mangle.scatter = v[pScatter] * 0.01f;
-    p.mangle.wobble = v[pWobble] * 0.01f;
-    p.mangle.crush = v[pCrush] * 0.01f;
-    p.mangle.hiss = v[pHiss] * 0.01f;
-    p.mangle.crackle = v[pCrackle] * 0.01f;
+    // Just Mangle lifts every Mangle setting from where its knob is towards full:
+    // Amount straight away, the five flavours a little later so the start stays gentle.
+    const float jm = std::clamp (v[pJustMangle] * 0.01f, 0.0f, 1.0f), jmFlavour = jm * std::sqrt (jm);
+    auto lift = [] (float knob, float by) { return knob + (1.0f - knob) * by; };
+    p.mangle.amount = lift (v[pMangle] * 0.01f, jm);
+    p.mangle.scatter = lift (v[pScatter] * 0.01f, jmFlavour);
+    p.mangle.wobble = lift (v[pWobble] * 0.01f, jmFlavour);
+    p.mangle.crush = lift (v[pCrush] * 0.01f, jmFlavour);
+    p.mangle.hiss = lift (v[pHiss] * 0.01f, jmFlavour);
+    p.mangle.crackle = lift (v[pCrackle] * 0.01f, jmFlavour);
     p.echo.level = v[pEcho] * 0.01f;
     p.echo.timeMs = v[pEchoTime];
     p.echo.repeats = v[pEchoRepeats] * 0.01f;

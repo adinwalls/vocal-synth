@@ -178,7 +178,16 @@ public:
         if (inRect (x, y, { kEjectBtn.x - 4, kEjectBtn.y - 4, kEjectBtn.w + 8, kEjectBtn.h + 8 })) { deckOpen = ! deckOpen; return true; }
         if (deckPos > 0.0 && inRect (x, y, kDeck))
         {
-            // the deck covers the display: only its own knobs answer
+            // the deck covers the display: only its own controls answer
+            if (deckPos > 0.98 && inRect (x, y, sliderHit()))
+            {
+                if (timeSec - lastSliderClick < 0.35) { commit (pJustMangle, 0.0f); lastSliderClick = -1; return true; }   // double-click = off
+                lastSliderClick = timeSec;
+                dragSlider = true;
+                host->beginEdit (pJustMangle);
+                setSlider (x);
+                return true;
+            }
             pressKnob (knobAt (x, y), y, fine, timeSec);
             return true;
         }
@@ -245,7 +254,15 @@ public:
     {
         if (gdrag != dNone) { editorUp(); return true; }
         if (dragKnob >= 0) { host->endEdit (kKnobParams[dragKnob]); dragKnob = -1; dirty = true; return true; }
+        if (dragSlider) { host->endEdit (pJustMangle); dragSlider = false; dirty = true; return true; }
         return false;
+    }
+
+    void setSlider (double x)
+    {
+        const Rect t = sliderTrack();
+        const float v = std::round ((float) std::clamp ((x - t.x) / t.w, 0.0, 1.0) * 100.0f);
+        if (v != values[pJustMangle]) { values[pJustMangle] = v; host->setParam (pJustMangle, v); dirty = true; }
     }
 
     bool mouseMove (double x, double y, bool fine)
@@ -255,6 +272,7 @@ public:
         if (hk != hoverKnob || hc != hoverCell || hm != hoverMenu) dirty = true;
         hoverKnob = hk; hoverCell = hc; hoverMenu = hm;
         if (gdrag != dNone) { editorDrag (x, y, fine); return true; }
+        if (dragSlider) { setSlider (x); return true; }
         if (dragKnob < 0) return false;
         const int p = kKnobParams[dragKnob];
         if (fine != dragFine) { dragNorm = toNorm (p, values[p]); dragY = y; dragFine = fine; }
@@ -277,6 +295,8 @@ public:
                 const int p = kKnobParams[k];
                 commit (p, fromNorm (p, std::clamp (toNorm (p, values[p]) + (dy > 0 ? 0.02 : -0.02), 0.0, 1.0)));
             }
+            else if (deckPos > 0.98 && inRect (x, y, sliderHit()))
+                commit (pJustMangle, values[pJustMangle] + (dy > 0 ? 2.0f : -2.0f));
             return true;
         }
         if (inRect (x, y, kScaleBox))
@@ -349,7 +369,8 @@ private:
     int hoverKnob = -1, dragKnob = -1, hoverCell = -1, hoverMenu = -1;
     int lastClickKnob = -1;
     double lastClickTime = -1, dragY = 0, dragNorm = 0;
-    bool dragFine = false;
+    bool dragFine = false, dragSlider = false;
+    double lastSliderClick = -1;
     cairo_surface_t* bg = nullptr;
     int bgW = 0, bgH = 0;
 
@@ -367,6 +388,9 @@ private:
     static constexpr int kRows = 5;            // 4 auto voices + tonic
     static constexpr double kRowTop = 150, kRowH = 33;
     static constexpr Rect kDeck = { 12, 118, 836, 258 };       // the tape deck, when it is out
+    // the Just Mangle slider, under the cassette
+    static Rect sliderTrack() { return { kDeck.x + kDeck.w / 2 - 100, kDeck.y + 196, 200, 6 }; }
+    static Rect sliderHit()   { const Rect t = sliderTrack(); return { t.x - 10, t.y - 9, t.w + 20, t.h + 30 }; }
     static constexpr Rect kEjectBtn = { 440, 384, 36, 16 };     // top right of the Voices module
     static constexpr int kNumKnobs = 22;
     static constexpr int kDeckKnob0 = 12;      // knobs 12.. sit on the tape deck: Mangle, then the echo
@@ -1322,7 +1346,8 @@ private:
 
     // ---------------- the tape deck ----------------
     // An eject key, cassette-player style, labelled MANGLE, at the top right of the Voices module.
-    bool deckBusy() const { return values[pEcho] > 0.5f || values[pMangle] > 0.5f; }
+    bool mangleOn() const { return values[pMangle] > 0.5f || values[pJustMangle] > 0.5f; }
+    bool deckBusy() const { return values[pEcho] > 0.5f || mangleOn(); }
 
     void drawEject (cairo_t* cr)
     {
@@ -1510,7 +1535,7 @@ private:
         rgb (cr, kText); text (cr, "TAPE MANGLER", d.x + d.w / 2 + 6, rail.y + 21.5, 12, 0);
 
         // the cassette door: a dark well, the cassette, and a clear lid with two hinge lugs
-        const Rect bay = { d.x + d.w / 2 - 112, d.y + 30, 224, 162 };
+        const Rect bay = { d.x + d.w / 2 - 112, d.y + 10, 224, 162 };
         window (cr, bay, 7);
         drawCassette (cr, bay.x + 18, bay.y + 21, bay.w - 36);
         const Rect lid = { bay.x + 6, bay.y + 6, bay.w - 12, bay.h - 12 };
@@ -1522,10 +1547,32 @@ private:
         cairo_set_source (cr, gl); rrect (cr, lid.x, lid.y, lid.w, lid.h, 5); cairo_fill (cr); cairo_pattern_destroy (gl);
         for (double hx : { bay.x + 40.0, bay.x + bay.w - 62.0 }) brushed (cr, { hx, bay.y + bay.h - 5, 22, 9 }, 2, 0.92);
 
+        // Just Mangle: one slider for the lot, with a row of lamps that run green to red
+        {
+            const Rect t = sliderTrack();
+            const double v = values[pJustMangle] * 0.01;
+            engraved (cr, "JUST MANGLE", t.x + t.w / 2, t.y - 8, 9, 0);
+            cairo_set_source_rgba (cr, 1, 1, 1, 0.6); rrect (cr, t.x - 4, t.y, t.w + 8, t.h + 1, 3); cairo_fill (cr);
+            cairo_set_source_rgb (cr, 0.05, 0.06, 0.08); rrect (cr, t.x - 4, t.y - 1, t.w + 8, t.h + 1, 3); cairo_fill (cr);
+            const int kLeds = 12;
+            static const C ledCol[4] = { { 0.30, 0.95, 0.35 }, { 1.00, 0.86, 0.18 }, { 1.00, 0.55, 0.12 }, { 1.00, 0.20, 0.16 } };
+            for (int i = 0; i < kLeds; ++i)
+                led (cr, t.x + t.w * (i + 0.5) / kLeds, t.y + 17.5, 2.7, ledCol[i / 3], v * kLeds > i + 0.02 ? 1.0 : 0.0);
+            // the cap
+            const double cx = t.x + t.w * v, cy = t.y + t.h / 2 - 0.5;
+            cairo_set_source_rgba (cr, 0, 0, 0, 0.45); rrect (cr, cx - 7, cy - 7.5, 16, 19, 2.5); cairo_fill (cr);
+            cairo_pattern_t* cg = cairo_pattern_create_linear (cx - 8, 0, cx + 8, 0);
+            cairo_pattern_add_color_stop_rgb (cg, 0.0, 0.16, 0.17, 0.20); cairo_pattern_add_color_stop_rgb (cg, 0.5, 0.36, 0.38, 0.42);
+            cairo_pattern_add_color_stop_rgb (cg, 1.0, 0.12, 0.13, 0.15);
+            cairo_set_source (cr, cg); rrect (cr, cx - 8, cy - 9, 16, 18, 2.5); cairo_fill (cr); cairo_pattern_destroy (cg);
+            if (dragSlider) rgb (cr, kAmber); else cairo_set_source_rgb (cr, 0.96, 0.96, 0.97);
+            cairo_rectangle (cr, cx - 0.9, cy - 7, 1.8, 14); cairo_fill (cr);
+        }
+
         // engraved panel lines round each group of knobs, with the group's name set into the top line
         cairo_set_line_width (cr, 1);
         struct Group { double x, w; const char* name; double led; };
-        const Group groups[2] = { { d.x + 20, 264, "MANGLE", values[pMangle] > 0.5f ? 0.35 + 0.0065 * values[pMangle] : 0.0 },
+        const Group groups[2] = { { d.x + 20, 264, "MANGLE", mangleOn() ? 0.35 + 0.0065 * std::max (values[pMangle], values[pJustMangle]) : 0.0 },
                                   { d.x + d.w - 264, 244, "ECHO", values[pEcho] > 0.5f ? 1.0 : 0.0 } };
         for (const Group& gp : groups)
         {

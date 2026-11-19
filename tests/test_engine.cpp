@@ -450,6 +450,22 @@ int main()
         check (wp < 1.5, "tape echo never runs away, even at its most extreme");
     }
 
+    // 16. Just Mangle: at 0 the knobs stand as they are; at full everything is at full.
+    {
+        float v[pCount];
+        for (int k = 0; k < pCount; ++k) v[k] = kSpecs[k].def;
+        v[pMangle] = 20; v[pHiss] = 30;
+        const auto a = toEngine (v);
+        v[pJustMangle] = 50;
+        const auto b = toEngine (v);
+        v[pJustMangle] = 100;
+        const auto c = toEngine (v);
+        check (std::abs (a.mangle.amount - 0.2f) < 1e-6f && std::abs (a.mangle.hiss - 0.3f) < 1e-6f
+               && b.mangle.amount > a.mangle.amount && b.mangle.hiss > a.mangle.hiss && b.mangle.amount < 1.0f
+               && c.mangle.amount == 1.0f && c.mangle.scatter == 1.0f && c.mangle.crackle == 1.0f,
+               "Just Mangle lifts every Mangle setting from its knob towards full");
+    }
+
     Harmonizer h;
     h.prepare (fs);
     std::printf ("\nReported latency at 48 kHz: %d samples (%.1f ms)", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);
