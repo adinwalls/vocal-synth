@@ -489,6 +489,99 @@ int main()
         check (exact, "the dry voice is untouched and on time at any host block size");
     }
 
+    // 18. Clipping protection, part one: however many voices are on, the mix that reaches
+    //     Mangle and the echo stays near the level of the default stack, and a stack no
+    //     bigger than the default is not touched at all.
+    {
+        const auto in = test::synthVowel (fs, 2.0, 220.0);
+        auto rmsOf = [&] (const Render& x)
+        {
+            double e = 0.0;
+            for (size_t i = 24000; i < x.l.size(); ++i) e += 0.5 * (x.l[i] * x.l[i] + x.r[i] * x.r[i]);
+            return std::sqrt (e / (double) (x.l.size() - 24000));
+        };
+        HarmonizerParams def;
+        def.key = 9;
+        auto raw = def;
+        raw.protect = false;
+        const auto a = run (in, fs, def), b = run (in, fs, raw);
+        check (a.l == b.l && a.r == b.r, "the default stack sounds exactly as it did before clipping protection");
+
+        const double ref = rmsOf (a);
+        bool level = true, wasLouder = false;
+        auto full = def;
+        full.autoVoices = 4;
+        full.tonic = true;
+        full.dry = 1.0f;
+        auto keys = full;
+        keys.mode = kModeAutoAndMidi;
+        auto hot = full;
+        hot.dry = hot.lead = hot.harmony = 2.0f;
+        int idx = 0;
+        for (const auto& p : { full, keys, hot })
+        {
+            auto off = p;
+            off.protect = false;
+            const auto press = [&] (Harmonizer& h) { if (idx == 1) for (int n : { 57, 61, 64, 69, 73, 76 }) h.noteOn (n, 1.0f); };
+            const double with = rmsOf (run (in, fs, p, press)), without = rmsOf (run (in, fs, off, press));
+            std::printf ("      %-28s %+5.1f dB vs the default stack (was %+5.1f)\n",
+                         idx == 0 ? "dry + lead + 4 + drone" : idx == 1 ? "the same + 6 keys held" : "the same, all at +6 dB",
+                         20.0 * std::log10 (with / ref), 20.0 * std::log10 (without / ref));
+            level = level && with < ref * 1.26 && with > ref * 0.63;   // within +2 / -4 dB
+            wasLouder = wasLouder || without > ref * 1.4;
+            ++idx;
+        }
+        check (level && wasLouder, "a big stack is turned down to the level of the default one");
+    }
+
+    // 19. Clipping protection, part two: whatever the knobs say, nothing leaves the plugin
+    //     above the ceiling, and a sound below the ceiling passes through untouched.
+    {
+        const auto in = test::synthVowel (fs, 1.5, 220.0);
+        std::vector<float> loud (in);
+        double inPeak = 0.0;
+        for (float x : loud) inPeak = std::max (inPeak, (double) std::abs (x));
+        for (float& x : loud) x *= (float) (0.98 / inPeak);   // a voice recorded right up to full scale
+
+        bool safe = true, finite = true;
+        double worst = 0.0;
+        for (int i = 0; i < kNumPresets + 1; ++i)
+        {
+            float v[pCount];
+            for (int k = 0; k < pCount; ++k) v[k] = kSpecs[k].def;
+            v[pKey] = 9;
+            if (i < kNumPresets) applyPreset (i, v);
+            else { v[pAutoVoices] = 4; v[pTonic] = 1; v[pDry] = v[pLead] = v[pHarmony] = 6; v[pOutput] = 12; v[pEcho] = 100; v[pEchoRepeats] = 95; }
+            const auto out = run (loud, fs, toEngine (v), [] (Harmonizer& h) { h.noteOn (64, 1.0f); });
+            for (size_t k = 0; k < out.l.size(); ++k)
+            {
+                finite = finite && std::isfinite (out.l[k]) && std::isfinite (out.r[k]);
+                worst = std::max (worst, (double) std::max (std::abs (out.l[k]), std::abs (out.r[k])));
+            }
+        }
+        safe = worst <= Limiter::kCeiling + 1.0e-4;
+        std::printf ("      loudest sample over every preset and everything turned up full: %.4f\n", worst);
+        check (safe && finite, "a full-scale voice never clips the output, on any preset or with everything turned up");
+
+        Limiter lim;
+        lim.prepare (fs);
+        std::vector<float> l (in), r (in);
+        const float low = lim.process (l.data(), r.data(), (int) l.size());
+        check (low == 1.0f && l == in && r == in, "below the ceiling the limiter changes nothing");
+
+        // a burst over the ceiling is held back, then let go again within half a second
+        std::vector<float> burst (48000, 0.0f);
+        for (size_t i = 0; i < burst.size(); ++i)
+            burst[i] = (i < 4800 ? 2.0f : 0.5f) * (float) std::sin (2.0 * M_PI * 220.0 * (double) i / fs);
+        auto bl = burst, br = burst;
+        lim.reset();
+        lim.process (bl.data(), br.data(), (int) bl.size());
+        double early = 0.0, late = 0.0;
+        for (size_t i = 0; i < 4800; ++i) early = std::max (early, (double) std::abs (bl[i]));
+        for (size_t i = 40000; i < 48000; ++i) late = std::max (late, (double) std::abs (bl[i]));
+        check (early <= Limiter::kCeiling + 1.0e-4 && late > 0.49, "the limiter lets go again once the loud part has passed");
+    }
+
     Harmonizer h;
     h.prepare (fs);
     std::printf ("\nReported latency at 48 kHz: %d samples (%.1f ms)", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);

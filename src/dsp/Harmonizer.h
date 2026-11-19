@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Limiter.h"
 #include "Mangler.h"
 #include "NoteTrack.h"
 #include "PsolaVoice.h"
@@ -47,6 +48,11 @@ struct HarmonizerParams
 
     // The tape deck: an echo after everything else. Off while its level is 0.
     EchoSettings echo;
+
+    // Clipping protection (always on in the plugin; the switch is for tests and
+    // measurements): a big stack is turned down before Mangle and the echo, and
+    // a limiter after Output keeps the plugin from clipping the host.
+    bool protect = true;
 };
 
 // The whole VoxBrew engine: one shared analyser feeding a pool of PSOLA voices.
@@ -113,6 +119,11 @@ public:
     std::array<std::atomic<float>, kNumVoices> meterVoice {};
     std::atomic<float> meterInput { 0.0f };
     int activeVoices() const;
+    // Clipping protection at work, in dB (0 = not doing anything): how far the
+    // stack is turned down before Mangle, and how hard the output limiter is
+    // holding back right now.
+    std::atomic<float> meterTrimDb { 0.0f };
+    std::atomic<float> meterLimitDb { 0.0f };
 
 private:
     void processChunk (const float* in, float* outL, float* outR, int n);
@@ -127,6 +138,8 @@ private:
     VoiceAnalyzer analyzer;
     Mangler mangler;
     TapeEcho echo;
+    StackTrim trim;
+    Limiter limiter;
     std::array<PsolaVoice, kNumVoices> voices;
     std::array<float, kNumVoices> pans {};
     std::array<int, kNumVoices> midiNote {};

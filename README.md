@@ -28,6 +28,7 @@ voice in ──► pitch tracker (YIN, shared) ──► pitch marks
 * **Tonic drone** holds the key's root, like the Messina's second Auto-Tune that fed the H8000.
 * **Loose** gives each voice its own small detune and slow drift so the stack sounds like a group, not a machine.
 * **Mangle** wears the sound out on purpose. Scatter and Wobble reuse the voice engine itself: the same grains of your voice are spaced unevenly, shuffled, repeated, flipped or dropped, and bent in pitch like a tired tape. Crush, Hiss and Crackle then work on the finished mix. It costs nothing while Amount is at 0.
+* **Clipping protection** works in two places and adds no delay. Before Mangle and the echo, a stack bigger than the default one (tuned lead plus two harmonies) is turned down to the default's level, so adding voices no longer drives the fuzz and the tape harder; smaller stacks are left exactly alone. After the Output knob, a limiter catches any peak that would pass -0.3 dBFS, so the plugin can't clip the track it sits on. The intended distortion of Crush and the tape is untouched.
 * **Latency:** normally 1664 samples at 48 kHz (35 ms), reported to the host so Mixbus lines up playback. It's sized for the lowest pitch tracked (75 Hz). **Low Latency** drops the reported delay to 3 ms and builds each grain from the newest complete period, so the real delay follows your pitch: about 14 ms at A3, less for higher notes. Use it while tracking; turn it off for mixing, when exact timing matters more.
 
 ## The screen
@@ -38,6 +39,7 @@ Same family look as TuneBrew and LevelBrew.
 * **Key buttons:** click to set the key. Green lamp = home note, yellow = in the scale, red = the note you're singing.
 * **Display:** the last 6 seconds. Amber is your voice, white the tuned lead, teal the auto voices, green the tonic, pink the MIDI voices.
 * **Auto voices panel:** click a lamp to turn voices on or off, use the arrows (or scroll) to change each voice's interval. The note each voice is singing shows on the right.
+* **SIG, HRM, LIM lamps** (beside the name): green while the plugin hears you, teal while harmony voices sound, red while the limiter is holding the output back. An occasional red blink is fine; if it stays lit, turn Output down.
 * **Mangle eject key** (top right of the Voices section): slides the tape mangler out over the display; press it again to put it away. Its little lamp shows when Mangle or the echo is on, even with the deck hidden.
 * **Knobs:** drag up and down, hold Shift for fine moves, double-click for the default, or scroll.
 
