@@ -466,6 +466,29 @@ int main()
                "Just Mangle lifts every Mangle setting from its knob towards full");
     }
 
+    // 17. Any host block size: the dry voice comes out exactly as it went in, delayed by
+    //     the reported latency. (Blocks that are not a multiple of the engine's own chunk
+    //     used to skip or repeat samples at every block edge: a crackle on everything.)
+    {
+        const auto in = test::synthVowel (fs, 1.0, 220.0, 25.0);
+        bool exact = true;
+        for (int block : { 400, 441, 37, 1024, 128 })
+        {
+            Harmonizer e;
+            e.prepare (fs);
+            auto p = only (0.0f, 0.0f);
+            p.dry = 1.0f;
+            e.setParams (p);
+            const int lat = e.getLatencySamples();
+            std::vector<float> l (in.size()), r (in.size());
+            for (size_t i = 0; i < in.size(); i += (size_t) block)
+                e.process (in.data() + i, l.data() + i, r.data() + i, (int) std::min<size_t> ((size_t) block, in.size() - i));
+            for (size_t i = (size_t) lat; i < in.size(); ++i)
+                exact = exact && l[i] == in[i - (size_t) lat];
+        }
+        check (exact, "the dry voice is untouched and on time at any host block size");
+    }
+
     Harmonizer h;
     h.prepare (fs);
     std::printf ("\nReported latency at 48 kHz: %d samples (%.1f ms)", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);

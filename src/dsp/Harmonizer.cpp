@@ -249,7 +249,12 @@ void Harmonizer::process (const float* in, float* outL, float* outR, int n)
 void Harmonizer::processChunk (const float* in, float* outL, float* outR, int n)
 {
     analyzer.process (in, n);
-    const int64_t outputStart = analyzer.written() - latency;
+    // The sound leaving now is the input from exactly `latency` samples ago,
+    // whatever the size of this chunk. (Measuring back from the end of the chunk
+    // made the delay depend on the chunk size, so any host block that is not a
+    // multiple of kChunk skipped or repeated a few samples at every block: a
+    // crackle on everything, the dry voice included.)
+    const int64_t outputStart = analyzer.written() - n - latency;
     analyzer.pruneBefore (outputStart - 4 * analyzer.getMaxPeriod());
 
     if (tlValid)
