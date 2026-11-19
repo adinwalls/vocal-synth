@@ -409,6 +409,47 @@ int main()
         check (secs < 1.0, "full Mangle on 10 voices still runs at least 10x faster than real time");
     }
 
+    // 15. Tape echo: off is exactly the clean sound; on, a repeat arrives after Time and they die away.
+    {
+        auto in = test::synthVowel (fs, 0.2, 220.0);
+        in.resize ((size_t) (fs * 4.0), 0.0f);
+        auto p = only (1.0f, 0.0f);
+        const auto clean = run (in, fs, p);
+        auto off = p;
+        off.echo = { 0.0f, 300.0f, 0.9f, 1.0f };
+        const auto offOut = run (in, fs, off);
+        check (offOut.l == clean.l && offOut.r == clean.r, "tape echo at 0 leaves the sound untouched");
+
+        auto on = p;
+        on.echo = { 1.0f, 500.0f, 0.5f, 0.3f };
+        const auto out = run (in, fs, on);
+        auto rms = [&] (const Render& x, double from, double to)
+        {
+            double e = 0.0;
+            const auto a = (size_t) (from * fs), b = (size_t) (to * fs);
+            for (size_t i = a; i < b; ++i) e += x.l[i] * x.l[i];
+            return std::sqrt (e / (double) (b - a));
+        };
+        // the note sounds from about 0.03 to 0.25 s; repeats follow every 0.5 s
+        const double note = rms (out, 0.08, 0.2), gap = rms (out, 0.35, 0.5),
+                     first = rms (out, 0.58, 0.7), second = rms (out, 1.08, 1.2), late = rms (out, 3.58, 3.7);
+        bool finite = true;
+        double peak = 0.0;
+        for (float v : out.l) { finite = finite && std::isfinite (v); peak = std::max (peak, (double) std::abs (v)); }
+        std::printf ("      note %.4f, gap %.4f, repeat 1 %.4f, repeat 2 %.4f, after 3.5 s %.5f\n", note, gap, first, second, late);
+        check (finite && peak < 1.0 && first > note * 0.3 && gap < first * 0.2 && second < first * 0.8 && second > first * 0.2
+               && late < first * 0.05, "tape echo repeats arrive on time and fade away");
+
+        auto wild = p;
+        wild.echo = { 1.0f, 60.0f, 0.95f, 1.0f };
+        const auto ten = test::synthVowel (fs, 10.0, 220.0);
+        const auto w = run (ten, fs, wild);
+        double wp = 0.0;
+        for (float v : w.l) wp = std::max (wp, (double) std::abs (v));
+        std::printf ("      shortest time, most repeats, oldest tape: peak %.2f\n", wp);
+        check (wp < 1.5, "tape echo never runs away, even at its most extreme");
+    }
+
     Harmonizer h;
     h.prepare (fs);
     std::printf ("\nReported latency at 48 kHz: %d samples (%.1f ms)", h.getLatencySamples(), 1000.0 * h.getLatencySamples() / fs);

@@ -21,6 +21,7 @@ enum Params
     pLowLatency,
     pOutVoices,    // output: number of sounding voices
     pMangle, pScatter, pWobble, pCrush, pHiss, pCrackle,
+    pEcho, pEchoTime, pEchoRepeats, pEchoAge,
     pCount
 };
 
@@ -78,6 +79,14 @@ static const ParamSpec kSpecs[pCount] = {
       "Tape hiss that swells when you sing" },
     { "Mangle Crackle", "Crackle", "mangle_crackle", "%", 0, 100, 50, kFloat,
       "Ticks and pops like an old record" },
+    { "Tape Echo", "Echo", "tape_echo", "%", 0, 100, 0, kFloat,
+      "Level of the tape deck's echo (0 = off)" },
+    { "Tape Echo Time", "Time", "tape_time", "ms", 60, 1200, 380, kFloat,
+      "Gap between repeats. Turning it bends the pitch, like changing tape speed" },
+    { "Tape Echo Repeats", "Repeats", "tape_repeats", "%", 0, 95, 40, kFloat,
+      "How many times the echo comes round" },
+    { "Tape Age", "Age", "tape_age", "%", 0, 100, 40, kFloat,
+      "A worn tape: each repeat gets darker, wobblier and more squashed" },
 };
 
 static const char* const kKeyNames[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
@@ -148,6 +157,10 @@ inline HarmonizerParams toEngine (const float* v)
     p.mangle.crush = v[pCrush] * 0.01f;
     p.mangle.hiss = v[pHiss] * 0.01f;
     p.mangle.crackle = v[pCrackle] * 0.01f;
+    p.echo.level = v[pEcho] * 0.01f;
+    p.echo.timeMs = v[pEchoTime];
+    p.echo.repeats = v[pEchoRepeats] * 0.01f;
+    p.echo.age = v[pEchoAge] * 0.01f;
     return p;
 }
 
