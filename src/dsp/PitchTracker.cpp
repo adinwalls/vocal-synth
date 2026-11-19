@@ -117,20 +117,22 @@ void PitchTracker::analyse()
             }
         }
 
-        constexpr float threshold = 0.15f;
-        for (int tau = tauMin; tau < tauMax; ++tau)
+        // Take the first dip that is nearly as deep as the deepest one. (Taking the
+        // first dip under a fixed threshold, as plain YIN does, jumps up an octave
+        // on real voices with a strong second harmonic, and falling back to the
+        // deepest dip drops an octave on breathy or changing notes.)
+        if (globalMin < 0.3f)
         {
-            if (diff[(size_t) tau] < threshold)
-            {
-                while (tau + 1 < tauMax && diff[(size_t) tau + 1] < diff[(size_t) tau])
-                    ++tau;
-                candidate = tau;
-                break;
-            }
+            for (int tau = tauMin + 1; tau < tauMax - 1; ++tau)
+                if (diff[(size_t) tau] < globalMin + 0.06f
+                    && diff[(size_t) tau] <= diff[(size_t) tau - 1] && diff[(size_t) tau] <= diff[(size_t) tau + 1])
+                {
+                    candidate = tau;
+                    break;
+                }
+            if (candidate < 0)
+                candidate = globalArg;
         }
-
-        if (candidate < 0 && globalMin < 0.3f)
-            candidate = globalArg;
 
         if (candidate > 0)
         {
