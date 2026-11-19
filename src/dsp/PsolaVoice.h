@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Mangler.h"
 #include "Scale.h"
 #include "VoiceAnalyzer.h"
 
@@ -20,7 +21,10 @@ struct VoiceSettings
     float attackMs = 15.0f;
     float releaseMs = 150.0f;
     float consonants = 0.5f;
-    bool lowLatency = false;    // place grains as late as possible (set by the Harmonizer)    // level of unpitched sounds (s, t, breaths) in harmony voices
+    bool lowLatency = false;    // place grains as late as possible (set by the Harmonizer)
+    // Mangle (set by the Harmonizer for each block)
+    float scatter = 0.0f;       // 0..1: grains played roughly, shuffled, repeated and dropped
+    float wobbleCents = 0.0f;   // tape wow and flutter, the same for every voice
 };
 
 // What a voice sings.
@@ -83,6 +87,11 @@ private:
     float detuneCents = 0.0f;
     double driftPhase = 0.0, driftRate = 0.2;
     std::minstd_rand rng;
+
+    // Scatter state
+    Noise nz;
+    int stutterLeft = 0, dropLeft = 0, flickLeft = 0;
+    double stutterPos = 0.0, flickRatio = 1.0;
 };
 
 } // namespace voxbrew

@@ -18,6 +18,7 @@ void PsolaVoice::prepare (const VoiceAnalyzer& analyzer, uint32_t seed)
     wsum.assign (size, 0.0f);
     mask = (int64_t) size - 1;
 
+    nz.seed (seed * 2654435761u + 77u);
     rng.seed (seed + 1);
     std::uniform_real_distribution<float> uni (-1.0f, 1.0f);
     detuneCents = uni (rng);                 // unit value, scaled by the Loose control
@@ -43,6 +44,7 @@ void PsolaVoice::start (const Target& t, float g, int64_t outputStart)
     currentMidi = -1.0;
     heldNote = -1000;
     lastHalf = maxHalf;
+    stutterLeft = dropLeft = flickLeft = 0;
 }
 
 void PsolaVoice::retarget (const Target& t, float g)
@@ -120,6 +122,49 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
             continue;
         }
 
+        // Scatter: the same grains, handled carelessly. A little makes the
+        // voice hoarse; a lot shuffles, repeats, flips and loses pieces of it.
+        const float sc = s.scatter;
+        bool drop = false, backwards = false;
+        float rough = 1.0f, wander = 1.0f;
+        if (sc > 0.0f)
+        {
+            const float sc2 = sc * sc;
+            const Mark* from = nullptr;
+            if (stutterLeft > 0)
+            {
+                --stutterLeft;                                   // stuck on one moment
+                from = analyzer.findMark (stutterPos);
+            }
+            else if (nz.uni() < sc2 * 0.05f)
+            {
+                stutterLeft = 2 + (int) (nz.uni() * sc * 22.0f);
+                stutterPos = synthPos;
+            }
+            else
+                from = analyzer.findMark (synthPos - nz.uni() * sc2 * 2.5 * maxHalf);   // reach back in time
+            if (from != nullptr)
+                m = from;
+
+            if (dropLeft > 0) { --dropLeft; drop = true; }       // a hole in the tape
+            else if (nz.uni() < sc2 * sc * 0.02f) { dropLeft = 2 + (int) (nz.uni() * sc * 18.0f); drop = true; }
+            else drop = nz.uni() < sc2 * 0.22f;
+
+            if (flickLeft > 0) --flickLeft;                      // a short jump up or down an octave
+            else
+            {
+                flickRatio = 1.0;
+                if (sc > 0.3f && nz.uni() < sc2 * 0.03f)
+                {
+                    flickLeft = 1 + (int) (nz.uni() * 8.0f);
+                    flickRatio = nz.uni() < 0.5f ? 2.0 : 0.5;
+                }
+            }
+            backwards = nz.uni() < sc * 0.35f;
+            rough = 1.0f - sc * 0.7f * nz.uni();
+            wander = 1.0f + sc * 0.6f * (nz.uni() - 0.5f);        // uneven spacing = rasp
+        }
+
         double step, half, f = 1.0;
         float level = 1.0f;
         pitched = m->voiced;
@@ -136,8 +181,8 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
 
             driftPhase += 2.0 * M_PI * driftRate * m->period / fs;
             const double cents = s.looseCents * (detuneCents + 0.5 * std::sin (driftPhase));
-            const double hz = midiToHz (currentMidi + cents * 0.01);
-            const double ratio = std::clamp (hz * m->period / fs, 0.25, 4.0);
+            const double hz = midiToHz (currentMidi + (cents + s.wobbleCents) * 0.01);
+            const double ratio = std::clamp (hz * m->period / fs * (sc > 0.0f ? flickRatio : 1.0), 0.25, 4.0);
 
             half = m->period;
             step = m->period / ratio;
@@ -153,6 +198,14 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
 
         const int gHalf = std::max (2, (int) std::min ((double) maxHalf, half / f));
         lastHalf = gHalf;
+        if (drop)
+        {
+            synthPos += step;
+            continue;
+        }
+        level *= rough;
+        if (backwards)
+            f = -f;
         const auto c = (int64_t) std::lround (synthPos);
         const double invHalf = M_PI / gHalf;
         for (int j = -gHalf + 1; j < gHalf; ++j)
@@ -166,7 +219,7 @@ void PsolaVoice::render (const VoiceAnalyzer& analyzer, const VoiceSettings& s,
             acc[idx] += w * x * level;
             wsum[idx] += w;
         }
-        synthPos += step;
+        synthPos += step * wander;
     }
 
     const float aCoef = 1.0f - (float) std::exp (-1.0 / (std::max (0.5f, s.attackMs) * 0.001 * fs));

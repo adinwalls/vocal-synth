@@ -33,6 +33,7 @@ int main (int argc, char** argv)
     values[pMode] = kModeAutoAndMidi;
     values[pAutoVoices] = 2;
     values[pTonic] = 1;
+    values[pMangle] = 55;
     if (what == "notes") { values[pMode] = kModeNotes; values[pTonic] = 0; }
 
     Harmonizer engine;

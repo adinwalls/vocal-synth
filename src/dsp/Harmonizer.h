@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Mangler.h"
 #include "NoteTrack.h"
 #include "PsolaVoice.h"
 #include "VoiceAnalyzer.h"
@@ -38,6 +39,10 @@ struct HarmonizerParams
     float output = 1.0f;
 
     VoiceSettings voice;
+
+    // Lo-fi damage: Scatter and Wobble act inside the voices, Crush, Hiss and
+    // Crackle on the whole mix (dry voice included). Off while amount is 0.
+    MangleSettings mangle;
 };
 
 // The whole VoxBrew engine: one shared analyser feeding a pool of PSOLA voices.
@@ -116,6 +121,7 @@ private:
 
     HarmonizerParams params;
     VoiceAnalyzer analyzer;
+    Mangler mangler;
     std::array<PsolaVoice, kNumVoices> voices;
     std::array<float, kNumVoices> pans {};
     std::array<int, kNumVoices> midiNote {};

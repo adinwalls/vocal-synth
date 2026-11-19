@@ -58,6 +58,24 @@ static const Preset kPresets[] = {
         { pMode, kModeAuto }, { pAutoVoices, 1 }, { pAuto1, -7 },
         { pLead, 0 }, { pHarmony, -4 }, { pSpread, 20 }, { pFormant, -2 },
         { pNatural, 40 }, { pLoose, 5 }, { pGlide, 30 } }, 10 },
+
+    // A cassette that has been played too often: drifting pitch, hiss, a little rasp.
+    { "Worn Tape", {
+        { pMode, kModeAuto }, { pAutoVoices, 2 }, { pAuto1, 2 }, { pAuto2, -3 },
+        { pHarmony, -4 }, { pNatural, 40 }, { pLoose, 14 },
+        { pMangle, 35 }, { pScatter, 25 }, { pWobble, 75 }, { pCrush, 20 }, { pHiss, 70 }, { pCrackle, 20 } }, 13 },
+
+    // Tuned lead and a low drone played off an old record.
+    { "Dusty Record", {
+        { pMode, kModeAuto }, { pAutoVoices, 1 }, { pAuto1, 4 }, { pTonic, 1 }, { pTonicOctave, 2 },
+        { pHarmony, -6 }, { pLoose, 10 }, { pRelease, 400 },
+        { pMangle, 45 }, { pScatter, 15 }, { pWobble, 35 }, { pCrush, 35 }, { pHiss, 40 }, { pCrackle, 90 } }, 14 },
+
+    // Four voices falling apart: stutters, gaps, crunch.
+    { "Broken Choir", {
+        { pMode, kModeAuto }, { pAutoVoices, 4 }, { pAuto1, 2 }, { pAuto2, 4 }, { pAuto3, -3 }, { pAuto4, -7 },
+        { pDry, -9 }, { pSpread, 100 }, { pLoose, 18 },
+        { pMangle, 85 }, { pScatter, 90 }, { pWobble, 60 }, { pCrush, 70 }, { pHiss, 45 }, { pCrackle, 50 } }, 15 },
 };
 
 static constexpr int kNumPresets = (int) (sizeof kPresets / sizeof kPresets[0]);
