@@ -2,24 +2,30 @@
 # Builds the VoxBrew demo video: a vocal through the real engine, with the real
 # editor on screen.
 #
-#   tools/demo/make_demo.sh [dry-vocal.wav] [out.mp4]
+#   tools/demo/make_demo.sh [dry-vocal.wav] [out.mp4] [key]
 #
 # Without a vocal it makes a synthetic stand-in singer (tools/demo/make_voice.py,
 # needs: pip install numpy pyworld soundfile). A real vocal should be one short
-# phrase in A major (about 6 seconds, 48 kHz); it is played once per scene.
+# phrase (about 6 seconds, 48 kHz) with a little silence at the end; it is played
+# once per scene. Give its major key as C, C#, D ... B (default A).
 # Needs ffmpeg and libcairo2-dev.
 set -e
 cd "$(dirname "$0")/../.."
 VOICE="$1"
 OUT="${2:-build/voxbrew-demo.mp4}"
+KEY="${3:-A}"
 mkdir -p build
 if [ -z "$VOICE" ]; then
     VOICE=build/demo_voice.wav
+    KEY="A synthetic"
     python3 tools/demo/make_voice.py "$VOICE"
 fi
 ${CXX:-g++} -O2 -std=c++17 $(pkg-config --cflags cairo) -o build/demo_video \
     tools/demo/demo_video.cpp src/dsp/*.cpp $(pkg-config --libs cairo)
-./build/demo_video "$VOICE" build/demo_audio.wav |
+# turn the Output knob down if the loudest scene would clip
+PEAK=$(./build/demo_video "$VOICE" - $KEY measure)
+TRIM=$(awk -v p="$PEAK" 'BEGIN { d = 20 * log(0.8 / p) / log(10); printf "%.1f", d < 0 ? d : 0 }')
+./build/demo_video "$VOICE" build/demo_audio.wav $KEY out=$TRIM |
     ffmpeg -hide_banner -loglevel error -y -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - \
         -c:v libx264 -pix_fmt yuv420p -crf 18 build/demo_video.mp4
 ffmpeg -hide_banner -loglevel error -y -i build/demo_video.mp4 -i build/demo_audio.wav \

@@ -4,8 +4,11 @@
 // scene with different settings, while the real editor (src/VoxView.h) is drawn
 // 30 times a second with those settings and the engine's live meters.
 //
-//   demo_video voice.wav out.wav | ffmpeg -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - ...
+//   demo_video voice.wav out.wav [key] [synthetic] | ffmpeg -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - ...
 //
+// `key` is the major key of the vocal (C, C#, ... B; default A). Add the word
+// "synthetic" when the vocal is the stand-in from make_voice.py, so the captions say so.
+// "out=-3" sets the Output knob in dB; "measure" draws nothing and prints the peak level.
 // Raw BGRA frames go to stdout, the plugin's output goes to out.wav.
 // See tools/demo/make_demo.sh.
 
@@ -38,11 +41,11 @@ struct Scene
     double seconds;                // 0 = one pass of the vocal; otherwise silence in, to hear the tail
 };
 
-static const std::vector<Scene> kScenes = {
-    { "1. The dry voice going in", "A synthetic stand-in singer, untouched and a little out of tune on purpose",
-      { { pKey, 9 }, { pScale, kMajor }, { pMode, kModeAuto }, { pAutoVoices, 0 }, { pTonic, 0 },
+static std::vector<Scene> kScenes = {
+    { "1. The dry voice going in", "The raw vocal, untouched",
+      { { pScale, kMajor }, { pMode, kModeAuto }, { pAutoVoices, 0 }, { pTonic, 0 },
         { pDry, 0 }, { pLead, -60 }, { pNatural, 10 }, { pSpread, 100 } }, false, -1, 0 },
-    { "2. Tuned lead", "VoxBrew snaps the voice to the key: A major",
+    { "2. Tuned lead", "VoxBrew snaps the voice to the notes of the key",
       { { pDry, -60 }, { pLead, 0 } }, false, -1, 0 },
     { "3. Harmony voices", "Two more voices follow the melody in key, a 3rd and a 5th above",
       { { pAutoVoices, 2 }, { pAuto1, 2 }, { pAuto2, 4 }, { pHarmony, -3 } }, false, -1, 0 },
@@ -54,7 +57,7 @@ static const std::vector<Scene> kScenes = {
         { pEcho, 38 }, { pEchoRepeats, 45 }, { pEchoAge, 50 } }, true, -1, 0 },
     { "6. Just Mangle", "One slider pushes all of the damage from worn to wrecked",
       {}, true, 85, 0 },
-    { "VoxBrew by Adin Walls", "All sound is the plugin's own engine. The singer is a synthetic stand-in",
+    { "VoxBrew by Adin Walls", "Every sound here is the plugin's own engine at work on one raw vocal",
       {}, true, -1, 3.5 },
 };
 
@@ -71,7 +74,7 @@ static void text (cairo_t* cr, const char* s, double cx, double y, double size, 
 
 int main (int argc, char** argv)
 {
-    if (argc < 3) { std::fprintf (stderr, "usage: demo_video voice.wav out.wav > frames.bgra\n"); return 2; }
+    if (argc < 3) { std::fprintf (stderr, "usage: demo_video voice.wav out.wav [key] [synthetic] > frames.bgra\n"); return 2; }
     wav::Audio in;
     if (! wav::read (argv[1], in)) { std::fprintf (stderr, "can't read %s\n", argv[1]); return 1; }
     const double fs = in.sampleRate;
@@ -81,6 +84,29 @@ int main (int argc, char** argv)
         float s = 0.0f;
         for (int c = 0; c < in.channels; ++c) s += in.data[i * (size_t) in.channels + (size_t) c];
         voice[i] = s / (float) in.channels;
+    }
+
+    int key = 9;
+    bool synthetic = false, measure = false;
+    float outDb = 0.0f;
+    for (int a = 3; a < argc; ++a)
+    {
+        const std::string o = argv[a];
+        if (o == "synthetic") { synthetic = true; continue; }
+        if (o == "measure") { measure = true; continue; }
+        if (o.rfind ("out=", 0) == 0) { outDb = (float) std::atof (o.c_str() + 4); continue; }
+        key = -1;
+        for (int k = 0; k < 12; ++k) if (o == kKeyNames[k]) key = k;
+        if (key < 0) { std::fprintf (stderr, "unknown key %s (use C, C#, D ... B)\n", o.c_str()); return 2; }
+    }
+    const std::string tuned = std::string ("VoxBrew snaps the voice to the key: ") + kKeyNames[key] + " major";
+    kScenes[0].changes.push_back ({ pKey, (float) key });
+    kScenes[0].changes.push_back ({ pOutput, outDb });
+    kScenes[1].sub = tuned.c_str();
+    if (synthetic)
+    {
+        kScenes[0].sub = "A synthetic stand-in singer, untouched and a little out of tune on purpose";
+        kScenes.back().sub = "All sound is the plugin's own engine. The singer is a synthetic stand-in";
     }
 
     const int W = 1920, H = 1080, fps = 30;
@@ -137,7 +163,7 @@ int main (int argc, char** argv)
             t += block / fs;
             view.tick (t);
 
-            if (++inBlock < 4) continue;
+            if (measure || ++inBlock < 4) continue;
             inBlock = 0;
             view.draw (pcr, VoxView::kW * sc, VoxView::kH * sc);
             cairo_surface_flush (plug);
@@ -166,6 +192,7 @@ int main (int argc, char** argv)
         out.data.push_back (outR[i]);
         peak = std::max ({ peak, std::abs (outL[i]), std::abs (outR[i]) });
     }
+    if (measure) { std::printf ("%.4f\n", peak); return 0; }
     if (! wav::writeFloat (argv[2], out)) { std::fprintf (stderr, "can't write %s\n", argv[2]); return 1; }
     std::fprintf (stderr, "%ld frames, %.1f s, peak %.2f\n", frames, t, peak);
     return 0;
